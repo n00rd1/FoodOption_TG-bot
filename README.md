@@ -33,12 +33,11 @@
 
 ## Использование
 Ваш бот готов к использованию! Теперь вы можете разрабатывать и добавлять функционал для небольшой сети доставки питания в вашем проекте. Помните, что вы можете использовать переменные среды в вашем коде для безопасного доступа к ключам и другим конфиденциальным данным:
-
-```javascript
-require('dotenv').config();
-
-const telegramBotToken = process.env.TELEGRAM_BOT_TOKEN;
-const apiKey = process.env.API_KEY;
-
-// Ваш код для работы с Telegram API и другими функциями бота здесь
-```
+   ```javascript
+   require('dotenv').config();
+   
+   const telegramBotToken = process.env.TELEGRAM_BOT_TOKEN;
+   const apiKey = process.env.API_KEY;
+   
+   // Ваш код для работы с Telegram API и другими функциями бота здесь
+   ```
