@@ -5,7 +5,32 @@ require('dotenv').config();
 const {TELEGRAM_BOT_TOKEN, ADMIN_ID} = process.env, TelegramApi = require('node-telegram-bot-api'),
 bot = new TelegramApi(TELEGRAM_BOT_TOKEN, {polling: true});
 
-db.run(`CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER UNIQUE, username TEXT, phone_number TEXT, body_weight REAL DEFAULT 0, body_fat_percentage REAL DEFAULT 0, physical_activity_coefficient REAL DEFAULT 0, gender TEXT DEFAULT 'М', state TEXT DEFAULT 'Похудеть', calories REAL DEFAULT 0);`);
+// TODO: добавить рост, замер талии, Индивидуальный/общий формат питания
+// TODO: *В случае общего формата питания - выводить готовый ценник, в случае индивидуального - написать, что нужно согласовать с +Номер Whats App+*
+// TODO: сделать следующий алгоритм: (указано в папке с Олегом)
+// TODO: добавить выбор времени для доставки (утро/вечер)
+
+// TODO: попробовать сделать вывод меню и настройку блюд (доступы на почте через сайт Canva)
+
+// TODO: На перспективу сделать сайт с аналогичным функционалом
+
+db.run(`CREATE TABLE IF NOT EXISTS users
+        (
+            id                            INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id                       INTEGER UNIQUE,
+            username                      TEXT,
+            phone                         TEXT,
+            gender                        TEXT DEFAULT 'М',
+            weight                        REAL DEFAULT 0,
+            format                        TEXT DEFAULT 'общий',
+            height                        REAL DEFAULT 0,
+            fat                           REAL DEFAULT 0,
+            activity                      REAL DEFAULT 0,
+            waist                         REAL DEFAULT 0,
+            type                          TEXT DEFAULT 'похудеть',
+            state                         TEXT DEFAULT 'start_gender',
+            calories                      REAL DEFAULT 0
+        );`);
 
 // TODO: Массовая рассылка информации по доставке (например, задержка или отмена поставки сегодня)
 // TODO: ----------------------------------------------------------------
@@ -21,16 +46,9 @@ db.run(`CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, 
 // TODO: Доделать логику обработки Калорий (+ или -)
 // TODO: сделать обработчик сохранения результата Калорий (+ или -)
 
-/*
-    ⚖️ Общая масса тела / кг ⚖️
-    🤸‍♀️ % жира 🤸‍♀️
-    🍽️ Дефицит калорий 📉
-    🍔 Профицит калорий 📈
-*/
-
 // Реакция на отправку контакта
 bot.on('contact', async (msg) => {
-    const phoneNumber = msg.contact.phone_number;
+    const phoneNumber = msg.contact.phone;
     const username = msg.chat.username || 'unknown';
     const userID = msg.from.id;
 
@@ -49,14 +67,14 @@ bot.on('message', async msg => {
 
     const text = msg.text || '';
     const msgType = msg.entities ? msg.entities[0].type : 'text';
-    const contact = msg.contact ? msg.contact.phone_number : 0;
+    const contact = msg.contact ? msg.contact.phone : 0;
 
     if (contact !== 0) {
-        checkPhoneNumber(chatID);
+        await checkPhoneNumber(chatID);
     }
 
 // На время разработки
-    if (ADMIN_ID !== chatID || chatID !== '801384711') {
+    if (ADMIN_ID != chatID || chatID != '801384711') {
         await bot.sendMessage(chatID, `Бот в разработке, обращайтесь в WhatsApp -- wa.me/77776886396`);
         await bot.sendMessage(ADMIN_ID, `Новый неавторизованный пользователь - {@${username} | ${chatID}} - ${text}`);
         return;
@@ -93,11 +111,11 @@ bot.on('message', async msg => {
 // Обновление номера телефона в базе данных
 const updatePhoneNumber = async (phoneNumber, userID) => {
     try {
-        await db.run('UPDATE users SET phone_number = ? WHERE user_id = ?', [phoneNumber, userID]);
+        await db.run('UPDATE users SET phone = ? WHERE user_id = ?', [phoneNumber, userID]);
         console.log(`Номер телефона обновлен для пользователя ${userID}`);
     } catch (err) {
         console.error('Ошибка при обновлении номера телефона в базе данных:', err);
-        bot.sendMessage(userID, 'Произошла ошибка при обновлении вашего номера телефона. Пожалуйста, попробуйте снова.');
+        await bot.sendMessage(userID, 'Произошла ошибка при обновлении вашего номера телефона. Пожалуйста, попробуйте снова.');
     }
 };
 
@@ -116,6 +134,11 @@ async function sayHello(chatID, reset = false) {
         'Приятного аппетита и заботы о своем здоровье! 🍽️🌿';
 
     const start_settings = 'Для примерного просчёта уникальных параметров для вас необходимо заполнить простую анкету, для этого ответьте на вопросы ниже.\n\n' +
+        'Необходимо будет указать следующие параметры:' +
+        '    🤸⚖️ Общая масса тела / кг ⚖️\n' +
+        '    🤸‍♀️ % жира 🤸‍♀️\n' +
+        '    🍽️ Дефицит калорий 📉\n' +
+        '    🍔 Профицит калорий 📈';
 
     if (reset === false) {
         await bot.sendMessage(chatID, helloMsg);
@@ -167,14 +190,14 @@ async function askActive(chatID){
 
 // Функция для проверки наличия номера телефона в базе данных по user_id
 async function checkPhoneNumber(chatID) {
-    db.get('SELECT phone_number FROM users WHERE user_id = ?', [chatID], (err, row) => {
+    db.get('SELECT phone FROM users WHERE user_id = ?', [chatID], (err, row) => {
         if (err) {
             console.error('Ошибка при проверке номера телефона в базе данных:', err);
             return;
         }
 
-        if (row && row.phone_number) {
-            console.log('Номер телефона уже существует в базе данных:', row.phone_number);
+        if (row && row.phone) {
+            console.log('Номер телефона уже существует в базе данных:', row.phone);
         } else {
             // Запрос на отправку номера телефона пользователю
             const keyboard = {
@@ -261,7 +284,7 @@ async function validateWeight(weight) {
     }
 
     // Проверяем, что вес находится в заданном диапазоне
-    if (weightNumber < 30 || weightNumber > 250) {
+    if (weightNumber < 30 || weightNumber > 160) {
         return false;
     }
 
@@ -277,8 +300,8 @@ async function validateWeight(weight) {
 
 // Функция для сохранения или добавления веса пользователя
 async function updateWeightDatabase(userId, newWeight) {
-    if (validateWeight(newWeight)) {
-        db.run('UPDATE users SET body_weight = ? WHERE user_id = ?', [newWeight, userId], err => {
+    if (await validateWeight(newWeight)) {
+        db.run('UPDATE users SET weight = ? WHERE user_id = ?', [newWeight, userId], err => {
             if (err) {
                 console.error('Ошибка при обновлении веса:', err);
             }
@@ -305,7 +328,7 @@ async function validateAndFormatBodyFat(fatPercentage) {
     }
 
     // Проверяем, что процент жира находится в допустимом диапазоне
-    if (formattedFat < 0.09 || formattedFat > 0.4) {
+    if (formattedFat < 0.09 || formattedFat > 0.6) {
         return null;
     }
 
@@ -317,7 +340,7 @@ async function updateFatDatabase(userId, newFat) {
     const validatedFat = validateAndFormatBodyFat(newFat);
 
     if (validatedFat !== null) {
-        db.run('UPDATE users SET body_fat_percentage = ? WHERE user_id = ?', [validatedFat, userId], err => {
+        db.run('UPDATE users SET fat = ? WHERE user_id = ?', [validatedFat, userId], err => {
             if (err) {
                 console.error('Ошибка при обновлении процента жира:', err);
             }
@@ -349,7 +372,7 @@ async function updateActivityDatabase(userId, activityDescription) {
     const newActivityCoefficient = validateAndGetActivityCoefficient(activityDescription);
 
     if (newActivityCoefficient !== null) {
-        db.run('UPDATE users SET physical_activity_coefficient = ? WHERE user_id = ?', [newActivityCoefficient, userId], err => {
+        db.run('UPDATE users SET activity = ? WHERE user_id = ?', [newActivityCoefficient, userId], err => {
             if (err) {
                 console.error('Ошибка при обновлении параметров активности:', err);
             }
@@ -360,16 +383,16 @@ async function updateActivityDatabase(userId, activityDescription) {
     }
 }
 
-// Функция для валидации и преобразования значения state
-async function validateAndFormatState(stateInput) {
+// Функция для валидации и преобразования значения type
+async function validateAndFormatType(typeInput) {
     const loseWeightIdentifiers = ['похудеть', 'меньше', 'уменьшить'];
     const gainWeightIdentifiers = ['потолстеть', 'больше', 'увеличить'];
 
-    stateInput = stateInput.toLowerCase().trim();
+    typeInput = typeInput.toLowerCase().trim();
 
-    if (loseWeightIdentifiers.includes(stateInput)) {
+    if (loseWeightIdentifiers.includes(typeInput)) {
         return 'Похудеть';
-    } else if (gainWeightIdentifiers.includes(stateInput)) {
+    } else if (gainWeightIdentifiers.includes(typeInput)) {
         return 'Потолстеть';
     } else {
         return null; // Возвращаем null, если значение не соответствует ни одному из идентификаторов
@@ -377,42 +400,42 @@ async function validateAndFormatState(stateInput) {
 }
 
 // Функция для сохранения или обновления целей пользователя
-async function updateStateDatabase(userId, stateInput) {
-    const validatedState = validateAndFormatState(stateInput);
+async function updateTypeDatabase(userId, typeInput) {
+    const validatedType = validateAndFormatType(typeInput);
 
-    if (validatedState !== null) {
-        db.run('UPDATE users SET state = ? WHERE user_id = ?', [validatedState, userId], err => {
+    if (validatedType !== null) {
+        db.run('UPDATE users SET type = ? WHERE user_id = ?', [validatedType, userId], err => {
             if (err) {
                 console.error('Ошибка при обновлении цели:', err);
             }
         });
     } else {
-        console.error('Некорректное значение цели:', stateInput);
+        console.error('Некорректное значение цели:', typeInput);
         // Здесь можно отправить сообщение пользователю о некорректном вводе
     }
 }
 
 // Функция высчета калорий
 async function calculateCalories(userId) {
-    // Расширяем запрос, чтобы получить также поле state
-    db.get('SELECT body_weight, body_fat_percentage, physical_activity_coefficient, state FROM users WHERE user_id = ?', [userId], async (err, row) => {
+    // Расширяем запрос, чтобы получить также поле type
+    db.get('SELECT weight, fat, activity, type FROM users WHERE user_id = ?', [userId], async (err, row) => {
         if (err) {
             console.error('Ошибка при получении данных пользователя:', err);
             return;
         }
         if (row) {
-            const { body_weight, body_fat_percentage, physical_activity_coefficient, state } = row;
+            const { weight, fat, activity, type } = row;
 
             // Проверяем, что все данные присутствуют и корректны
-            if (body_weight && body_fat_percentage && physical_activity_coefficient) {
+            if (weight && fat && activity) {
                 // Вычисляем базовую калорийную норму
-                const leanBodyMass = body_weight - (body_weight * body_fat_percentage);
-                let calories = ((body_weight - leanBodyMass) * 23) * physical_activity_coefficient;
+                const leanBodyMass = weight - (weight * fat);
+                let calories = ((weight - leanBodyMass) * 23) * activity;
 
                 // Корректируем калорийность в зависимости от целей пользователя
-                if (state === 'Похудеть') {
+                if (type === 'Похудеть') {
                     calories -= 300;
-                } else if (state === 'Потолстеть') {
+                } else if (type === 'Потолстеть') {
                     calories += 300;
                 }
 
