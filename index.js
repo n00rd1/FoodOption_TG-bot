@@ -1,18 +1,16 @@
 const sqlite3 = require('sqlite3').verbose();
 const db = new sqlite3.Database('users.db');
+const fs = require('fs').promises;
 require('dotenv').config();
 // Приветственное сообщение в боте
 const {TELEGRAM_BOT_TOKEN, ADMIN_ID} = process.env, TelegramApi = require('node-telegram-bot-api'),
 bot = new TelegramApi(TELEGRAM_BOT_TOKEN, {polling: true});
 
-// TODO: добавить рост, замер талии, Индивидуальный/общий формат питания
-// TODO: *В случае общего формата питания - выводить готовый ценник, в случае индивидуального - написать, что нужно согласовать с +Номер Whats App+*
-// TODO: сделать следующий алгоритм: (указано в папке с Олегом)
-// TODO: добавить выбор времени для доставки (утро/вечер)
-
+// Пока что - это мусор, но иметь в виду
 // TODO: попробовать сделать вывод меню и настройку блюд (доступы на почте через сайт Canva)
-
 // TODO: На перспективу сделать сайт с аналогичным функционалом
+// TODO: Починить работу с весом и вывод информации из таблицы
+// TODO: сделать метод, меняющий статус на статус с префиксом старт, если предыдущий статус был
 
 db.run(`CREATE TABLE IF NOT EXISTS users
         (
@@ -21,21 +19,18 @@ db.run(`CREATE TABLE IF NOT EXISTS users
             username                      TEXT,
             phone                         TEXT,
             gender                        TEXT DEFAULT 'М',
-            weight                        REAL DEFAULT 0,
-            format                        TEXT DEFAULT 'общий',
             height                        REAL DEFAULT 0,
+            middle                        REAL DEFAULT 0,
+            format                        TEXT DEFAULT 'общий',
+            weight                        REAL DEFAULT 0,
             fat                           REAL DEFAULT 0,
             activity                      REAL DEFAULT 0,
-            waist                         REAL DEFAULT 0,
-            type                          TEXT DEFAULT 'похудеть',
+            target                        TEXT DEFAULT 'похудеть',
             state                         TEXT DEFAULT 'start_gender',
             calories                      REAL DEFAULT 0
         );`);
 
 // TODO: Массовая рассылка информации по доставке (например, задержка или отмена поставки сегодня)
-// TODO: ----------------------------------------------------------------
-// TODO: Проверить БД
-
 // TODO: Добавить подгрузку state и сделать его изменение в зависимости от статуса
 // TODO: Доделать логику обработки М/Ж пола
 // TODO: сделать обработчик сохранения результата М/Ж
@@ -45,6 +40,33 @@ db.run(`CREATE TABLE IF NOT EXISTS users
 // TODO: сделать обработчик сохранения результата Жира
 // TODO: Доделать логику обработки Калорий (+ или -)
 // TODO: сделать обработчик сохранения результата Калорий (+ или -)
+
+// Реакция на callback
+bot.on('callback_query', async (callbackQuery) => {
+    const message = callbackQuery.message;
+    const userId = message.chat.id;
+    const callbackQueryData = callbackQuery.data;
+
+    const [data, value] = data.split(':');
+
+    switch (data) {
+        case 'activity':
+            await handleActivitySelection(userId, value);
+            break;
+        case 'format':
+            await handleFormatSelection(userId, value);
+            break;
+        case 'общий':
+        case 'индивидуальный':
+            await updateFormatDatabase(userId, data);
+            break;
+
+        // Добавьте другие случаи обработки здесь
+        default:
+            // Неизвестный тип запроса
+            await bot.sendMessage(userId, 'Неизвестный запрос.');
+    }
+});
 
 // Реакция на отправку контакта
 bot.on('contact', async (msg) => {
@@ -57,7 +79,7 @@ bot.on('contact', async (msg) => {
 
 // На написание письма реакция
 bot.on('message', async msg => {
-    console.log(msg);
+    await console.log(msg);
     const username = msg.chat.username || 'unknown';
     const chatID = msg.chat.id;
 
@@ -69,18 +91,20 @@ bot.on('message', async msg => {
     const msgType = msg.entities ? msg.entities[0].type : 'text';
     const contact = msg.contact ? msg.contact.phone : 0;
 
-    if (contact !== 0) {
-        await checkPhoneNumber(chatID);
-    }
+    await askMale();
+    return ;
+
+//    if (contact !== 0) {
+//        await checkPhoneNumber(chatID);
+//    }
 
 // На время разработки
-    if (ADMIN_ID != chatID || chatID != '801384711') {
-        await bot.sendMessage(chatID, `Бот в разработке, обращайтесь в WhatsApp -- wa.me/77776886396`);
-        await bot.sendMessage(ADMIN_ID, `Новый неавторизованный пользователь - {@${username} | ${chatID}} - ${text}`);
-        return;
-    }
+if (ADMIN_ID != chatID || chatID != '801384711') {
+    await bot.sendMessage(chatID, `Бот в разработке, обращайтесь в WhatsApp -- wa.me/77776886396`);
+    await bot.sendMessage(ADMIN_ID, `Новый неавторизованный пользователь - {@${username} | ${chatID}} - ${text}`);
+    return;
+}
 //---------------------
-
     if (msgType === 'bot_command') {
         // приветственное сообщение
         if (text === '/start') {
@@ -100,24 +124,13 @@ bot.on('message', async msg => {
     // Проверяем, существует ли пользователь в базе данных
     db.get('SELECT * FROM users WHERE user_id = ?', [chatID], async (err, row) => {
         //
-        if (err) await console.error('Ошибка при проверке пользователя в базе данных:', err);
+        if (err) await logError('Ошибка при проверке пользователя в базе данных:', err);
 
         // Добавляю нового пользователя
         if (!row) await giveMeYourPhoneNumber(chatID, username);
     });
 
 });
-
-// Обновление номера телефона в базе данных
-const updatePhoneNumber = async (phoneNumber, userID) => {
-    try {
-        await db.run('UPDATE users SET phone = ? WHERE user_id = ?', [phoneNumber, userID]);
-        console.log(`Номер телефона обновлен для пользователя ${userID}`);
-    } catch (err) {
-        console.error('Ошибка при обновлении номера телефона в базе данных:', err);
-        await bot.sendMessage(userID, 'Произошла ошибка при обновлении вашего номера телефона. Пожалуйста, попробуйте снова.');
-    }
-};
 
 // Отправка приветственного сообщения проверка веса
 async function sayHello(chatID, reset = false) {
@@ -144,12 +157,39 @@ async function sayHello(chatID, reset = false) {
         await bot.sendMessage(chatID, helloMsg);
     }
 
+    db.run('UPDATE users SET state = ? WHERE user_id = ?', ['start_quick', chatID], async err => {
+        if (err) {
+            await logError('Ошибка при обновлении изменении статуса', err);
+        }
+    });
+
     await bot.sendMessage(chatID, start_settings);
     await askMale(chatID);
 }
 
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+// -----    -----   Телефон
+// Обновление номера телефона в базе данных
+const updatePhoneNumber = async (phoneNumber, userID) => {
+    try {
+        await db.run('UPDATE users SET phone = ? WHERE user_id = ?', [phoneNumber, userID]);
+        await logError(`Номер телефона обновлен для пользователя ${userID}`);
+    } catch (err) {
+        await logError('Ошибка при обновлении номера телефона в базе данных:', err);
+        await bot.sendMessage(userID, 'Произошла ошибка при обновлении вашего номера телефона. Пожалуйста, попробуйте снова.');
+    }
+};
+
+
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+// -----    -----   ПОЛ
 // Вопрос про пол
-async function askMale(chatID){
+async function askMale(userId, start = false){
+    let state;
+    start === true ? state = 'start_gender':state ='gender';
+
     // Клавиатура для выбора пола
     const genderKeyboard  = {
         reply_markup: {
@@ -163,84 +203,15 @@ async function askMale(chatID){
         },
     };
 
-    await bot.sendMessage(chatID, 'Вы мужчина или женщина?', genderKeyboard);
-}
-
-// Вопрос про вес
-async function askWeight(chatID){
-
-}
-
-// Вопрос про активность ежедневную
-async function askActive(chatID){
-    const activeKeyboard = [
-        [ Markup.button("👩‍💻 Бытовая деятельность (сидячая работа) 🏠")],
-        [ Markup.button("🏋️‍♂️ Фитнес тренировки 3 раза/неделю 💪") ],
-        [ Markup.button("🏋️‍♀️ Фитнес тренировки 4-5 раз/неделю 💪") ],
-        [ Markup.button("🏋️‍♂️ Интенсивные тренировки 4-5 раз/неделю 🔥")],
-        [ Markup.button("🏋️‍♀️ Фитнес тренировки 6 раз/неделю 💦")],
-        [ Markup.button("🏋️‍♂️ Интенсивные тренировки 6 раз/неделю 💦")],
-        [ Markup.button("🏋️‍♀️🌞 Интенсивные тренировки 6 раз/неделю (2 раза/день) 💦🌙")]
-    ];
-
-    const active = 'Выберите наиболее близкий для вас вариант ежедневной активности?';
-
-    await bot.sendMessage(chatID, active, activeKeyboard);
-}
-
-// Функция для проверки наличия номера телефона в базе данных по user_id
-async function checkPhoneNumber(chatID) {
-    db.get('SELECT phone FROM users WHERE user_id = ?', [chatID], (err, row) => {
+    db.run('UPDATE users SET state = ? WHERE user_id = ?', [state, userId], async err => {
         if (err) {
-            console.error('Ошибка при проверке номера телефона в базе данных:', err);
-            return;
-        }
-
-        if (row && row.phone) {
-            console.log('Номер телефона уже существует в базе данных:', row.phone);
-        } else {
-            // Запрос на отправку номера телефона пользователю
-            const keyboard = {
-                reply_markup: {
-                    one_time_keyboard: true,
-                    keyboard: [[{ text: 'Поделиться номером телефона', request_contact: true }]],
-                },
-            };
-            bot.sendMessage(chatID, 'Поделитесь своим номером телефона:', keyboard);
+            await logError('Ошибка при обновлении cтатуса на запрос пола:', err);
+            // Сообщение пользователю о возникшей ошибке
+            await bot.sendMessage(userId, '[Обновление статуса] Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
         }
     });
-}
 
-// Функция для обработки новых пользователей
-async function giveMeYourPhoneNumber(chatID, username) {
-    const keyboard = {
-        reply_markup: {
-            one_time_keyboard: true,
-            keyboard: [[{ text: 'Поделиться номером телефона', request_contact: true }]],
-        },
-    };
-    await bot.sendMessage(chatID, 'Поделитесь своим номером телефона, чтобы получить новый функционал!', keyboard);
-
-    db.run('INSERT OR IGNORE INTO users (user_id, username) VALUES (?, ?)', [chatID, username], err => {
-        if (err) console.error('Ошибка при добавлении пользователя в базу данных:', err);
-    });
-}
-
-// Функция для отправки сообщений администратору
-async function notifyAdmin(chatID, username, text) {
-    if (ADMIN_ID !== chatID) {
-        const message = `@${username || chatID}: ${text}`;
-        await bot.sendMessage(ADMIN_ID, message);
-    }
-}
-
-// Функция для обновления username в базе данных по user_id
-async function updateUsernameInDatabase(userID, newUsername) {
-    db.run('UPDATE users SET username = ? WHERE user_id = ?', [newUsername, userID], err => {
-        if (err) {
-            console.error('Ошибка при обновлении username в базе данных:', err);
-        }
-    });
+    await bot.sendMessage(userId, 'Вы мужчина или женщина?', genderKeyboard);
 }
 
 // Функция для валидации и преобразования значения пола
@@ -264,33 +235,258 @@ async function updateGenderDatabase(userId, genderInput) {
     const validatedGender = validateAndFormatGender(genderInput);
 
     if (validatedGender !== null) {
-        db.run('UPDATE users SET gender = ? WHERE user_id = ?', [validatedGender, userId], err => {
+        db.run('UPDATE users SET gender = ? WHERE user_id = ?', [validatedGender, userId], async err => {
             if (err) {
-                console.error('Ошибка при обновлении пола:', err);
+                await logError('Ошибка при обновлении пола:', err);
+                // Сообщение пользователю о возникшей ошибке
+                await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
             }
         });
     } else {
-        console.error('Некорректное значение пола:', genderInput);
+        await logError('Некорректное значение пола:', genderInput);
         // Здесь можно отправить сообщение пользователю о некорректном вводе
     }
 }
 
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+// -----    -----   РОСТ
+// Функция для запроса роста пользователя
+async function askHeight(userId, start = false) {
+    let state;
+    start === true ? state = 'start_height':state ='height';
+
+    db.run('UPDATE users SET state = ? WHERE user_id = ?', [state, userId], async err => {
+        if (err) {
+            await logError('Ошибка при обновлении cтатуса на запрос роста:', err);
+            // Сообщение пользователю о возникшей ошибке
+            await bot.sendMessage(userId, '[Обновление статуса] Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+        }
+    });
+
+    await bot.sendMessage(userId, 'Пожалуйста, введите ваш рост в сантиметрах (например, 175.5):');
+}
+
+// Функция для валидации и преобразования введенного роста
+async function validateAndFormatHeight(heightInput) {
+    // Проверка, является ли ввод числом и находится ли в допустимых пределах
+    const height = parseFloat(heightInput);
+    if (!isNaN(height) && height > 100 && height < 250) {
+        return height;
+    } else {
+        return null;
+    }
+}
+
+// Функция для сохранения или обновления роста пользователя
+async function updateHeightDatabase(userId, heightInput) {
+    const validatedHeight = await validateAndFormatHeight(heightInput);
+
+    if (validatedHeight !== null) {
+        db.run('UPDATE users SET height = ? WHERE user_id = ?', [validatedHeight, userId], async err => {
+            if (err) {
+                await logError('Ошибка при обновлении роста:', err);
+            }
+        });
+    } else {
+        await logError('Некорректное значение роста:', heightInput);
+        // Здесь нужно отправить сообщение пользователю о некорректном вводе
+    }
+}
+
+
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+// -----    -----   ТАЛИЯ
+// Функция для запроса обхвата талии
+async function askMiddle(userId, start = false) {
+    let state;
+    start === true ? state = 'start_middle':state ='middle';
+
+    db.run('UPDATE users SET state = ? WHERE user_id = ?', [state, userId], async err => {
+        if (err) {
+            await logError('Ошибка при обновлении cтатуса на запрос талии:', err);
+            // Сообщение пользователю о возникшей ошибке
+            await bot.sendMessage(userId, '[Обновление статуса] Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+        }
+    });
+
+    await bot.sendMessage(userId, 'Введите обхват вашей талии в сантиметрах (например, 80.5):');
+}
+
+// Функция для валидации и сохранения обхвата талии
+async function updateMiddleDatabase(userId, middleInput) {
+    const middle = parseFloat(middleInput);
+    if (!isNaN(middle) && middle >= 50 && middle <= 150) {
+        db.run('UPDATE users SET middle = ? WHERE user_id = ?', [middle, userId], async err => {
+            if (err) {
+                await logError('Ошибка при обновлении обхвата талии:', err);
+            }
+        });
+    } else {
+        await logError('Некорректное значение обхвата талии:', middleInput);
+    }
+}
+
+
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+// -----    -----   ТИП ПИТАНИЯ
+// Функция для запроса формата питания
+async function askFormat(userId, start = false) {
+    const formatKeyboard = {
+        reply_markup: JSON.stringify({
+            inline_keyboard: [
+                [{ text: 'Общий', callback_data: 'общий' }],
+                [{ text: 'Индивидуальный', callback_data: 'индивидуальный' }]
+            ]
+        })
+    };
+
+    let state;
+    start === true ? state = 'start_format':state ='format';
+
+    db.run('UPDATE users SET state = ? WHERE user_id = ?', [state, userId], async err => {
+        if (err) {
+            await logError('Ошибка при обновлении cтатуса на запрос типа питания:', err);
+            // Сообщение пользователю о возникшей ошибке
+            await bot.sendMessage(userId, '[Обновление статуса] Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+        }
+    });
+
+    await bot.sendMessage(userId, 'Выберите формат питания:', formatKeyboard);
+}
+
+// Функция для обновления формата питания в базе данных
+async function updateFormatDatabase(userId, format) {
+    db.run('UPDATE users SET format = ? WHERE user_id = ?', [format, userId], async err => {
+        if (err) {
+            await logError('Ошибка при обновлении формата питания:', err);
+        }
+    });
+}
+
+
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+// -----    -----   ВЫБОР ИЗ ВАРИАНТОВ ВЕСА
+// Вопрос про пол
+async function askWeight(userId, gender = 'М', start = false){
+    let state;
+    start === true ? state = 'start_choose_weight':state ='choose_weight';
+
+    // Клавиатура для выбора Мужчин
+/*    const weightKeyboardMan  = {
+        reply_markup: {
+            one_time_keyboard: true,
+            keyboard: [
+                [
+                    { text: '75-80'},
+                    { text: '85-90'},
+                    { text: '95-100'},
+                    { text: '105-110'},
+                    { text: '115-120'},
+                    { text: '125-130'}
+                ]
+            ],
+        },
+    };*/
+    const weightKeyboardMan = {
+        reply_markup: JSON.stringify({
+            inline_keyboard: [
+                [{ text: '75-80', callback_data: 'm_75' }],
+                [{ text: '85-90', callback_data: 'm_85' }],
+                [{ text: '95-100', callback_data: 'm_95' }],
+                [{ text: '105-110', callback_data: 'm_105' }],
+                [{ text: '115-120', callback_data: 'm_115' }],
+                [{ text: '125-130', callback_data: 'm_125' }]
+            ]
+        })
+    };
+
+    // Клавиатура для выбора Женщин
+/*    const weightKeyboardWoman  = {
+        reply_markup: {
+            one_time_keyboard: true,
+            keyboard: [
+                [
+                    { text: '55-60'},
+                    { text: '65-70'},
+                    { text: '75-80'},
+                    { text: '85-90'},
+                    { text: '95-100'},
+                    { text: '105-110'},
+                    { text: '115-120'},
+                    { text: '125-130'}
+                ]
+            ],
+        },
+    };*/
+    const weightKeyboardWoman = {
+        reply_markup: JSON.stringify({
+            inline_keyboard: [
+                [{ text: '55-60', callback_data: 'w_55' }],
+                [{ text: '65-70', callback_data: 'w_65' }],
+                [{ text: '75-80', callback_data: 'w_75' }],
+                [{ text: '85-90', callback_data: 'w_85' }],
+                [{ text: '95-100', callback_data: 'w_95' }],
+                [{ text: '105-110', callback_data: 'w_105' }],
+                [{ text: '115-120', callback_data: 'w_115' }],
+                [{ text: '125-130', callback_data: 'w_125' }]
+            ]
+        })
+    };
+
+    db.run('UPDATE users SET state = ? WHERE user_id = ?', [state, userId], async err => {
+        if (err) {
+            await logError('Ошибка при обновлении cтатуса на запрос пола:', err);
+            // Сообщение пользователю о возникшей ошибке
+            await bot.sendMessage(userId, '[Обновление статуса] Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+        }
+    });
+
+    await bot.sendMessage(userId, 'Выберите ваш вес из вариантов', gender === 'М' ? weightKeyboardMan : weightKeyboardWoman);
+}
+
+// Функция для валидации и преобразования значения пола
+async function validateAndFormatWeight(weightInput) {
+    const maleIdentifiers = ['м', 'мужчина', 'male', 'm'];
+    const femaleIdentifiers = ['ж', 'женщина', 'female', 'f', 'w'];
+
+    genderInput = genderInput.toLowerCase().trim();
+
+    if (maleIdentifiers.includes(genderInput)) {
+        return 'М';
+    } else if (femaleIdentifiers.includes(genderInput)) {
+        return 'Ж';
+    } else {
+        return null; // Возвращаем null, если значение не соответствует ни одному из идентификаторов
+    }
+}
+
+
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+// -----    -----   ВЫБОР ИЗ ВАРИАНТОВ ЦЕНЫ
+
+
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+// -----    -----   ВЕС
 // Функция для валидации веса
 async function validateWeight(weight) {
     // Проверяем, что вес - это число
     const weightNumber = parseFloat(weight);
-    if (isNaN(weightNumber)) {
-        return false;
-    }
 
     // Проверяем, что вес находится в заданном диапазоне
-    if (weightNumber < 30 || weightNumber > 160) {
+    if (isNaN(weightNumber) || weightNumber < 30 || weightNumber > 160) {
         return false;
     }
 
     // Проверяем, что у веса не более одного символа после запятой
     const weightString = weightNumber.toString();
     const decimalPointIndex = weightString.indexOf('.');
+
     if (decimalPointIndex !== -1 && weightString.length - decimalPointIndex - 1 > 1) {
         return false;
     }
@@ -301,16 +497,25 @@ async function validateWeight(weight) {
 // Функция для сохранения или добавления веса пользователя
 async function updateWeightDatabase(userId, newWeight) {
     if (await validateWeight(newWeight)) {
-        db.run('UPDATE users SET weight = ? WHERE user_id = ?', [newWeight, userId], err => {
+        db.run('UPDATE users SET weight = ? WHERE user_id = ?', [newWeight, userId], async err => {
             if (err) {
-                console.error('Ошибка при обновлении веса:', err);
+                await logError('Ошибка при обновлении веса:', err);
             }
         });
     } else {
-        console.error('Некорректное значение веса:', newWeight);
+        await logError('Некорректное значение веса:', newWeight);
         // Здесь вы можете отправить сообщение пользователю о том, что введен некорректный вес
         await bot.sendMessage(userId, `Вес `);
     }
+}
+
+
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+// -----    -----   ЖИР
+// Функция для запроса процента жира
+async function askFat(chatID) {
+    await bot.sendMessage(chatID, 'Введите процент жира в вашем теле (например, 20.5):');
 }
 
 // Функция для валидации и форматирования процента жира
@@ -328,7 +533,7 @@ async function validateAndFormatBodyFat(fatPercentage) {
     }
 
     // Проверяем, что процент жира находится в допустимом диапазоне
-    if (formattedFat < 0.09 || formattedFat > 0.6) {
+    if (isNaN(formattedFat) || formattedFat < 0.09 || formattedFat > 0.6) {
         return null;
     }
 
@@ -340,17 +545,49 @@ async function updateFatDatabase(userId, newFat) {
     const validatedFat = validateAndFormatBodyFat(newFat);
 
     if (validatedFat !== null) {
-        db.run('UPDATE users SET fat = ? WHERE user_id = ?', [validatedFat, userId], err => {
+        db.run('UPDATE users SET fat = ? WHERE user_id = ?', [validatedFat, userId], async err => {
             if (err) {
-                console.error('Ошибка при обновлении процента жира:', err);
+                await logError('Ошибка при обновлении процента жира:', err);
             }
         });
     } else {
-        console.error('Некорректное значение процента жира:', newFat);
+        await logError('Некорректное значение процента жира:', newFat);
         // Здесь вы можете отправить сообщение пользователю о том, что введен некорректный процент жира
     }
 }
 
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+// -----    -----   АКТИВНОСТЬ
+// Вопрос про активность
+async function askActive(chatID){
+    const activeKeyboard = {
+        reply_markup: JSON.stringify({
+            inline_keyboard: [
+                [{ text: '👩‍💻 Бытовая деятельность (сидячая работа) 🏠', callback_data: 'Бытовая деятельность (сидячая работа)' }],
+                [{ text: '🏋️‍♂️ Фитнес тренировки 3 раза/неделю 💪', callback_data: 'Фитнес тренировки 3 раза/неделю' }],
+                [{ text: '🏋️‍♀️ Фитнес тренировки 4-5 раз/неделю 💪', callback_data: 'Фитнес тренировки 4-5 раз/неделю' }],
+                [{ text: '🏋️‍♂️ Интенсивные тренировки 4-5 раз/неделю 🔥', callback_data: 'Интенсивные тренировки 4-5 раз/неделю' }],
+                [{ text: '🏋️‍♀️ Фитнес тренировки 6 раз/неделю 💦', callback_data: 'Фитнес тренировки 6 раз/неделю' }],
+                [{ text: '️‍♂️ Интенсивные тренировки 6 раз/неделю 💦', callback_data: 'Интенсивные тренировки 6 раз/неделю' }],
+                [{ text: '️🏋️‍♀️🌞 Интенсивные тренировки 6 раз/неделю (2 раза/день) 💦🌙', callback_data: 'Интенсивные тренировки 6 раз/неделю (2 раза/день)' }],
+            ]
+        })
+    };
+
+/*    const activeKeyboard = [
+        [ Markup.button("👩‍💻 Бытовая деятельность (сидячая работа) 🏠")],
+        [ Markup.button("🏋️‍♂️ Фитнес тренировки 3 раза/неделю 💪") ],
+        [ Markup.button("🏋️‍♀️ Фитнес тренировки 4-5 раз/неделю 💪") ],
+        [ Markup.button("🏋️‍♂️ Интенсивные тренировки 4-5 раз/неделю 🔥")],
+        [ Markup.button("🏋️‍♀️ Фитнес тренировки 6 раз/неделю 💦")],
+        [ Markup.button("🏋️‍♂️ Интенсивные тренировки 6 раз/неделю 💦")],
+        [ Markup.button("🏋️‍♀️🌞 Интенсивные тренировки 6 раз/неделю (2 раза/день) 💦🌙")]
+    ];*/
+
+    const active = 'Выберите наиболее близкий для вас вариант ежедневной активности?';
+    await bot.sendMessage(chatID, active, activeKeyboard);
+}
 
 // Функция для валидации и получения значения коэффициента активности
 async function validateAndGetActivityCoefficient(activityDescription) {
@@ -372,18 +609,23 @@ async function updateActivityDatabase(userId, activityDescription) {
     const newActivityCoefficient = validateAndGetActivityCoefficient(activityDescription);
 
     if (newActivityCoefficient !== null) {
-        db.run('UPDATE users SET activity = ? WHERE user_id = ?', [newActivityCoefficient, userId], err => {
+        db.run('UPDATE users SET activity = ? WHERE user_id = ?', [newActivityCoefficient, userId], async err => {
             if (err) {
-                console.error('Ошибка при обновлении параметров активности:', err);
+                await logError('Ошибка при обновлении параметров активности:', err);
             }
         });
     } else {
-        console.error('Некорректное описание активности:', activityDescription);
+        //await logError('Некорректное описание активности:', activityDescription);
+
         // Здесь вы можете отправить сообщение пользователю о том, что введено некорректное описание активности
     }
 }
 
-// Функция для валидации и преобразования значения type
+
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+// -----    -----   ЦЕЛЬ
+// Функция для валидации и преобразования значения ЦЕЛЬ
 async function validateAndFormatType(typeInput) {
     const loseWeightIdentifiers = ['похудеть', 'меньше', 'уменьшить'];
     const gainWeightIdentifiers = ['потолстеть', 'больше', 'увеличить'];
@@ -404,23 +646,90 @@ async function updateTypeDatabase(userId, typeInput) {
     const validatedType = validateAndFormatType(typeInput);
 
     if (validatedType !== null) {
-        db.run('UPDATE users SET type = ? WHERE user_id = ?', [validatedType, userId], err => {
+        db.run('UPDATE users SET target = ? WHERE user_id = ?', [validatedType, userId], async err => {
             if (err) {
-                console.error('Ошибка при обновлении цели:', err);
+                await logError('Ошибка при обновлении цели:', err);
             }
         });
     } else {
-        console.error('Некорректное значение цели:', typeInput);
+        await logError('Некорректное значение цели:', typeInput);
         // Здесь можно отправить сообщение пользователю о некорректном вводе
     }
+}
+
+
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+// -----    -----   ДОСТАВКА
+
+
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+// -----    -----   НОМЕР ТЕЛЕФОНА
+// Функция для обработки новых пользователей
+async function giveMeYourPhoneNumber(chatID, username) {
+    const keyboard = {
+        reply_markup: {
+            one_time_keyboard: true,
+            keyboard: [[{ text: 'Поделиться номером телефона', request_contact: true }]],
+        },
+    };
+    await bot.sendMessage(chatID, 'Поделитесь своим номером телефона, чтобы получить новый функционал!', keyboard);
+
+    db.run('INSERT OR IGNORE INTO users (user_id, username) VALUES (?, ?)', [chatID, username], async err => {
+        if (err) await logError('Ошибка при добавлении пользователя в базу данных:', err);
+    });
+}
+
+// Функция для проверки наличия номера телефона в базе данных по user_id
+async function checkPhoneNumber(chatID) {
+    db.get('SELECT phone FROM users WHERE user_id = ?', [chatID], async (err, row) => {
+        if (err) {
+            await logError('Ошибка при проверке номера телефона в базе данных:', err);
+            return;
+        }
+
+        if (row && row.phone) {
+            await logError('Номер телефона уже существует в базе данных:', row.phone);
+        } else {
+            // Запрос на отправку номера телефона пользователю
+            const keyboard = {
+                reply_markup: {
+                    one_time_keyboard: true,
+                    keyboard: [[{text: 'Поделиться номером телефона', request_contact: true}]],
+                },
+            };
+            bot.sendMessage(chatID, 'Поделитесь своим номером телефона:', keyboard);
+        }
+    });
+}
+
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+// -----    -----   ПРОЧЕЕ
+// Функция для отправки сообщений администратору
+async function notifyAdmin(chatID, username, text) {
+    if (ADMIN_ID !== chatID) {
+        const message = `@${username || chatID}: ${text}`;
+        await bot.sendMessage(ADMIN_ID, message);
+    }
+}
+
+// Функция для обновления username в базе данных по user_id
+async function updateUsernameInDatabase(userID, newUsername) {
+    db.run('UPDATE users SET username = ? WHERE user_id = ?', [newUsername, userID], async err => {
+        if (err) {
+            await logError('Ошибка при обновлении username в базе данных:', err);
+        }
+    });
 }
 
 // Функция высчета калорий
 async function calculateCalories(userId) {
     // Расширяем запрос, чтобы получить также поле type
-    db.get('SELECT weight, fat, activity, type FROM users WHERE user_id = ?', [userId], async (err, row) => {
+    db.get('SELECT weight, fat, activity, target FROM users WHERE user_id = ?', [userId], async (err, row) => {
         if (err) {
-            console.error('Ошибка при получении данных пользователя:', err);
+            await logError('Ошибка при получении данных пользователя:', err);
             return;
         }
         if (row) {
@@ -440,30 +749,60 @@ async function calculateCalories(userId) {
                 }
 
                 // Обновляем поле calories в базе данных
-                db.run('UPDATE users SET calories = ? WHERE user_id = ?', [calories, userId], err => {
+                db.run('UPDATE users SET calories = ? WHERE user_id = ?', [calories, userId], async err => {
                     if (err) {
-                        console.error('Ошибка при обновлении калорий в базе данных:', err);
+                        await logError('Ошибка при обновлении калорий в базе данных:', err);
                     }
                 });
             } else {
-                console.error('Недостаточно данных для расчета калорий.');
+                await logError('Недостаточно данных для расчета калорий.');
                 await bot.sendMessage(userId, 'Недостаточно данных для расчёта калорий, попробуйте заполнить всё ещё раз!');
             }
         }
     });
 }
 
-/***************************************
- ***        ПОДСЧЁТ СТОИМОСТИ       ****
-****************************************/
+/*********************************************************
+ ***    *****   ВАЖНЫЕ ЧАСТИ ДЛЯ РАБОТЫ       ****   *****
+ *********************************************************/
+// Обработчик ошибок базы данных
+db.on('error', async err => {
+    await notifyAdmin(ADMIN_ID, '', 'База данных поела говна');
+    await logError('Ошибка базы данных:', err);
+});
+
+// Закрываем базу данных при выходе из приложения
+process.on('exit', async () => {
+    db.close(async err => {
+        if (err) {
+            await notifyAdmin(ADMIN_ID, '', 'Ошибка при закрытии базы данных');
+            await logError('Ошибка при закрытии базы данных:', err)
+        }
+    });
+});
+
+// Функция записи в лог файл
+async function logError(err) {
+    const errorMessage = `[${new Date().toISOString()}] ${err}\n`;
+    try {
+        await fs.appendFile('error.log', errorMessage);
+    } catch (fileErr) {
+        await notifyAdmin(ADMIN_ID, '', 'Ошибка при записи в лог-файл');
+        console.error('Ошибка при записи в лог-файл', fileErr);
+    }
+}
+
+/*********************************************************
+ ***    *****        ПОДСЧЁТ СТОИМОСТИ       ****   *****
+ *********************************************************/
 // Словарь цен в зависимости от калорий (для мужчин)
 const priceRangesMan = [
-    { minCal: 1600, maxCal: 1699, pricePerDay: 6500, pricePerWeek: 33000, pricePerTwoWeekSale: 62700, pricePerTwoWeek: 66000, pricePerTreeWeekSale: 118800, pricePerTreeWeek: 132000, pricePerMonthSale: 145200, pricePerMonth: 165200 },
-    { minCal: 1700, maxCal: 1779, pricePerDay: 6300, pricePerWeek: 34200, pricePerTwoWeekSale: 64980, pricePerTwoWeek: 68400, pricePerTreeWeekSale: 123120, pricePerTreeWeek: 136800, pricePerMonthSale: 150480, pricePerMonth: 171000 },
-    { minCal: 1800, maxCal: 1999, pricePerDay: 6100, pricePerWeek: 35400, pricePerTwoWeekSale: 67260, pricePerTwoWeek: 70800, pricePerTreeWeekSale: 127400, pricePerTreeWeek: 141600, pricePerMonthSale: 155760, pricePerMonth: 177000 },
-    { minCal: 2000, maxCal: 2199, pricePerDay: 5900, pricePerWeek: 36600, pricePerTwoWeekSale: 69540, pricePerTwoWeek: 73200, pricePerTreeWeekSale: 131760, pricePerTreeWeek: 146400, pricePerMonthSale: 161040, pricePerMonth: 183000 },
-    { minCal: 2200, maxCal: 2399, pricePerDay: 5700, pricePerWeek: 37800, pricePerTwoWeekSale: 71820, pricePerTwoWeek: 75600, pricePerTreeWeekSale: 136080, pricePerTreeWeek: 151200, pricePerMonthSale: 166320, pricePerMonth: 189000 },
-    { minCal: 2400, maxCal: 2600, pricePerDay: 5500, pricePerWeek: 39000, pricePerTwoWeekSale: 74100, pricePerTwoWeek: 78000, pricePerTreeWeekSale: 140400, pricePerTreeWeek: 156000, pricePerMonthSale: 171600, pricePerMonth: 195000 },
+    { minCal: 1600, maxCal: 1699, pricePerDay: 5500, pricePerWeek: 33000, pricePerTwoWeekSale: 62700, pricePerTwoWeek: 66000, pricePerTreeWeekSale: 118800, pricePerTreeWeek: 132000, pricePerMonthSale: 145200, pricePerMonth: 165200 },
+    { minCal: 1700, maxCal: 1779, pricePerDay: 5700, pricePerWeek: 34200, pricePerTwoWeekSale: 64980, pricePerTwoWeek: 68400, pricePerTreeWeekSale: 123120, pricePerTreeWeek: 136800, pricePerMonthSale: 150480, pricePerMonth: 171000 },
+    { minCal: 1800, maxCal: 1999, pricePerDay: 5900, pricePerWeek: 35400, pricePerTwoWeekSale: 67260, pricePerTwoWeek: 70800, pricePerTreeWeekSale: 127400, pricePerTreeWeek: 141600, pricePerMonthSale: 155760, pricePerMonth: 177000 },
+    { minCal: 2000, maxCal: 2199, pricePerDay: 6100, pricePerWeek: 36600, pricePerTwoWeekSale: 69540, pricePerTwoWeek: 73200, pricePerTreeWeekSale: 131760, pricePerTreeWeek: 146400, pricePerMonthSale: 161040, pricePerMonth: 183000 },
+    { minCal: 2200, maxCal: 2399, pricePerDay: 6300, pricePerWeek: 37800, pricePerTwoWeekSale: 71820, pricePerTwoWeek: 75600, pricePerTreeWeekSale: 136080, pricePerTreeWeek: 151200, pricePerMonthSale: 166320, pricePerMonth: 189000 },
+    { minCal: 2400, maxCal: 2600, pricePerDay: 6500, pricePerWeek: 39000, pricePerTwoWeekSale: 74100, pricePerTwoWeek: 78000, pricePerTreeWeekSale: 140400, pricePerTreeWeek: 156000, pricePerMonthSale: 171600, pricePerMonth: 195000 },
 ];
 
 // Словарь цен в зависимости от калорий (для женщин)
@@ -478,6 +817,9 @@ const priceRangesWoman = [
     { minCal: 2050, maxCal: 2200, pricePerDay: 6000, pricePerWeek: 36000, pricePerTwoWeekSale: 72000, pricePerTwoWeek: 72000, pricePerTreeWeekSale: 129600, pricePerTreeWeek: 144000, pricePerMonthSale: 158400, pricePerMonth: 180000 },
 ];
 
+/*********************************************************
+ ***    *****           АРХИВ                 ****   *****
+ *********************************************************/
 // Функция для определения цены на основе калорий и пола пользователя
 async function getPriceBasedOnCaloriesAndGender(calories, gender) {
     const priceRanges = gender === 'М' ? priceRangesMan : priceRangesWoman;
@@ -485,12 +827,13 @@ async function getPriceBasedOnCaloriesAndGender(calories, gender) {
     return priceInfo ? { pricePerWeek: priceInfo.pricePerWeek, pricePerMonth: priceInfo.pricePerMonth } : null;
 }
 
+
 // Функция, которая извлекает пол и калории пользователя из базы данных и выводит информацию о цене
 async function calculateAndDisplayPrice(userId) {
     // Получаем данные пользователя из базы данных
     db.get('SELECT gender, calories FROM users WHERE user_id = ?', [userId], async (err, row) => {
         if (err) {
-            console.error('Ошибка при получении данных пользователя:', err);
+            await logError('Ошибка при получении данных пользователя:', err);
             return;
         }
         if (row) {
@@ -516,25 +859,11 @@ async function calculateAndDisplayPrice(userId) {
 
                 await bot.sendMessage(userId, message);
             } else {
-                console.log(`Пользователь с ID ${userId} - Не удалось определить цену для указанного количества калорий.`);
+                await logError(`Пользователь с ID ${userId} - Не удалось определить цену для указанного количества калорий.`);
             }
         } else {
-            console.log(`Пользователь с ID ${userId} не найден в базе данных.`);
+            await logError(`Пользователь с ID ${userId} не найден в базе данных.`);
         }
     });
 }
 
-
-// Обработчик ошибок базы данных
-db.on('error', async err => {
-    console.error('Ошибка базы данных:', err);
-});
-
-// Закрываем базу данных при выходе из приложения
-process.on('exit', () => {
-    db.close(err => {
-        if (err) {
-            console.error('Ошибка при закрытии базы данных:', err);
-        }
-    });
-});
