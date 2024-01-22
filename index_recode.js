@@ -24,45 +24,25 @@ db.run(`CREATE TABLE IF NOT EXISTS users
             calories                      REAL DEFAULT 0
         );`);
 
-// Реакция на callback
-bot.on('callback_query', async (callbackQuery) => {
-    const message = callbackQuery.message;
-    const userId = message.chat.id;
-    const callbackQueryData = callbackQuery.data;
-
-    const [data, value] = data.split(':');
-
-    switch (data) {
-        case 'activity':
-            await handleActivitySelection(userId, value);
-            break;
-        case 'format':
-            await handleFormatSelection(userId, value);
-            break;
-        case 'общий':
-        case 'индивидуальный':
-            await updateFormatDatabase(userId, data);
-            break;
-
-        // Добавьте другие случаи обработки здесь
-        default:
-            // Неизвестный тип запроса
-            await bot.sendMessage(userId, 'Неизвестный запрос.');
-    }
+bot.on('contact', async (msg) => { // Реакция на отправку контакта
+    await updatePhoneNumber(msg.from.id, msg.contact.phone);
 });
-
-// Реакция на отправку контакта
-bot.on('contact', async (msg) => {
-    const phoneNumber = msg.contact.phone;
-    const username = msg.chat.username || 'unknown';
-    const userID = msg.from.id;
-
-    await updatePhoneNumber(phoneNumber, userID);
+bot.on('document', async (msg) => { // Реакция на отправку документа
+    await notifyAdmin(msg.from.id, msg.chat.username || 'unknown', "Прислал документ"); // Отправка уведомления о документе
+    await forwardAdmin(msg); // Пересылка самого сообщения
+});
+bot.on('photo', async (msg) => { // Реакция на отправку фото
+    await notifyAdmin(msg.from.id, msg.chat.username || 'unknown', "Прислал документ"); // Отправка уведомления о документе
+    await forwardAdmin(msg); // Пересылка самого сообщения
+});
+bot.on('voice', async (msg) => { // Реакция на отправку голосового
+    await notifyAdmin(msg.from.id, msg.chat.username || 'unknown', "Прислал документ"); // Отправка уведомления о документе
+    await forwardAdmin(msg); // Пересылка самого сообщения
 });
 
 // На написание письма реакция
-bot.on('message', async msg => {
-    await console.log(msg);
+bot.on('text', async msg => {
+await console.log(msg);
     const username = msg.chat.username || 'unknown';
     const chatID = msg.chat.id;
 
@@ -140,11 +120,15 @@ async function sayHello(chatID, reset = false) {
  *****    *****            ПРОЧЕЕ            *****   *****
  *********************************************************/
 // Функция для отправки сообщений администратору
-async function notifyAdmin(chatID, username, text) {
+async function notifyAdmin(chatID, username, text = 'Без текста') {
     if (ADMIN_ID !== chatID) {
-        const message = `@${username || chatID}: ${text}`;
-        await bot.sendMessage(ADMIN_ID, message);
+        await bot.sendMessage(ADMIN_ID, `@${username || chatID}: ${text}`);
     }
+}
+
+// Функция для пересылки сообщений администратору
+async function forwardAdmin(msg) {
+    await bot.forwardMessage(ADMIN_ID, msg.chat.id, msg.message_id); // Пересылка самого документа
 }
 
 // Функция для обновления username в базе данных по user_id
@@ -263,7 +247,7 @@ process.on('exit', async () => {
  ***    *****           ТЕЛЕФОН               ****   *****
  *********************************************************/
 // Обновление номера телефона в базе данных
-const updatePhoneNumber = async (phoneNumber, userID) => {
+const updatePhoneNumber = async (userID, phoneNumber) => {
     try {
         await db.run('UPDATE users SET phone = ? WHERE user_id = ?', [phoneNumber, userID]);
         await logError(`Номер телефона обновлен для пользователя ${userID}`);
