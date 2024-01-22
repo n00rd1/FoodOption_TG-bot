@@ -143,7 +143,7 @@ async function updateUsernameInDatabase(userID, newUsername) {
     });
 }
 
-// Функция для обновления статуса (написана через GPT, можно вернуть назад на корректную самописную)
+// Функция для обновления статуса (возможна проблема в работе статусов)
 async function getNextStates(userID) {
     try {
         // Получаем текущее состояние и формат из базы данных
@@ -163,7 +163,8 @@ async function getNextStates(userID) {
         }
 
         const { state: currentState, format: currentFormat } = row;
-        const newState = getNextState(currentState, currentFormat);
+        const stateOrder = getStateOrder(currentState, currentFormat);
+        const newState = stateOrder.indexOf(currentState);
 
         // Обновляем состояние в базе данных
         if (newState) {
@@ -175,16 +176,64 @@ async function getNextStates(userID) {
 }
 
 // Получение текущего состояния
-function getStateOrder(format) {
-    const baseStates = [
-        'start_gender', 'gender', 'start_middle', 'middle',
-        'start_height', 'height', 'start_format', 'format',
-        'choose_weight', 'price', 'weight', 'fat', 'activity', 'target', 'delivery'
+function getStateOrder(currentState, currentFormat) {
+    // Список состояний в порядке их следования
+    const allStatesStart = [
+        'start_gender', 'start_middle', 'start_height', 'start_format',
     ];
 
-    const additionalStates = format === 'общий' ? ['start_choose_weight', 'start_price'] : ['start_weight', 'start_fat', 'start_activity', 'start_target', 'start_calories'];
+    const allStatesDefaultStart = [
+        'start_choose_weight', 'start_price',
+    ];
 
-    return [...baseStates, ...additionalStates];
+    const allStatesIndividualStart = [
+        'start_weight', 'start_fat', 'start_activity', 'start_target', 'start_calories',
+    ];
+
+    const allStatesDefault = [
+        'gender', 'middle', 'height', 'format', 'choose_weight', 'price', 'weight', 'fat', 'activity', 'target', 'delivery',
+    ];
+
+    // Определяем индекс текущего состояния
+    let newState = "", currentIndex = allStatesDefault.indexOf(currentState);
+
+    if (currentIndex !== -1 && currentIndex !== allStatesDefault.length - 1) {
+        newState = allStatesDefault[currentIndex + 1];
+    }
+    else {
+        if (currentIndex === allStatesDefault.length - 1) {
+            newState = 'default';
+        }
+        else {
+            currentIndex = allStatesStart.indexOf(currentState);
+            if (currentIndex !== -1 && currentIndex !== allStatesStart.length - 1) { // Если текущее состояние входит в начальное
+                newState = allStatesStart[currentIndex + 1];
+            } else if (currentIndex === allStatesStart.length - 1) { // Если текущее состояние входит в начальное и оно последнее
+                if (currentFormat == "общ") { // Если текущей формат - общий
+                    newState = allStatesDefaultStart[0];
+                } else if (currentFormat == "индив") { // Если текущей формат - индивидуальный
+                    newState = allStatesIndividualStart[0]
+                }
+            } else {
+                if (currentFormat == "общ") {
+                    currentIndex = allStatesDefaultStart.indexOf(currentState);
+                    if (currentIndex !== -1 && currentIndex !== allStatesDefaultStart.length - 1) { // Если текущее состояние входит в общее
+                        newState = allStatesDefaultStart[currentIndex + 1];
+                    } else {
+                        newState = allStatesDefault[allStatesDefault.length - 1];
+                    }
+                } else if (currentFormat == "индив") {
+                    currentIndex = allStatesIndividualStart.indexOf(currentState);
+                    if (currentIndex !== -1 && currentIndex !== allStatesIndividualStart.length - 1) { // Если текущее состояние входит в общее
+                        newState = allStatesIndividualStart[currentIndex + 1];
+                    } else {
+                        newState = allStatesDefault[allStatesDefault.length - 1];
+                    }
+                }
+            }
+        }
+    }
+    return newState;
 }
 
 // Запись обновлённого состояния в базу данных
