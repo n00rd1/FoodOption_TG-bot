@@ -143,88 +143,61 @@ async function updateUsernameInDatabase(userID, newUsername) {
     });
 }
 
-// Функция для обновления статуса
-async function getNextStates(userID){
-    let currentState = "", currentFormat = "";
-    db.get('SELECT state, format FROM users WHERE user_id = ?', [userID], (err, row) => {
-        if (err) {
-            // Обработка ошибки
-            logError('Ошибка при получении данных из базы данных:', err);
+// Функция для обновления статуса (написана через GPT, можно вернуть назад на корректную самописную)
+async function getNextStates(userID) {
+    try {
+        // Получаем текущее состояние и формат из базы данных
+        const row = await new Promise((resolve, reject) => {
+            db.get('SELECT state, format FROM users WHERE user_id = ?', [userID], (err, row) => {
+                if (err) {
+                    reject(err);
+                    return;
+                }
+                resolve(row);
+            });
+        });
+
+        if (!row) {
+            await logError('Пользователь не найден в базе данных');
             return;
         }
 
-        if (row) {
-            currentState = row.state; // Сохраняем статус в переменной
-            currentFormat = row.format; // Сохраняем формат в переменной
-        } else {
-            logError('Пользователь не найден в базе данных'); // Ситуация, когда пользователь не найден
-            return;
+        const { state: currentState, format: currentFormat } = row;
+        const newState = getNextState(currentState, currentFormat);
+
+        // Обновляем состояние в базе данных
+        if (newState) {
+            await updateStateInDatabase(userID, newState);
         }
-    });
-
-    // Список состояний в порядке их следования
-    const allStatesStart = [
-        'start_quick', 'start_gender', 'start_middle', 'start_height', 'start_format',
-    ];
-
-    const allStatesDefaultStart = [
-        'start_choose_weight', 'start_price',
-    ];
-
-    const allStatesIndividualStart = [
-        'start_weight', 'start_fat', 'start_activity', 'start_target', 'start_calories',
-    ];
-
-    const allStatesDefault = [
-        'gender', 'middle', 'height', 'format', 'choose_weight', 'price', 'weight', 'fat', 'activity', 'target', 'delivery',
-    ];
-
-    // Определяем индекс текущего состояния
-    let newState = "", currentIndex = allStatesDefault.indexOf(currentState);
-
-    if (currentIndex !== -1 && currentIndex !== allStatesDefault.length - 1) {
-        newState = allStatesDefault[currentIndex + 1];
+    } catch (err) {
+        await logError('Ошибка при обновлении статуса в базе данных:', err);
     }
-    else {
-        if (currentIndex === allStatesDefault.length - 1) {
-            newState = 'default';
-        }
-        else {
-            currentIndex = allStatesStart.indexOf(currentState);
-            if (currentIndex !== -1 && currentIndex !== allStatesStart.length - 1) { // Если текущее состояние входит в начальное
-                newState = allStatesStart[currentIndex + 1];
-            } else if (currentIndex === allStatesStart.length - 1) { // Если текущее состояние входит в начальное и оно последнее
-                if (currentFormat == "общ") { // Если текущей формат - общий
-                    newState = allStatesDefaultStart[0];
-                } else if (currentFormat == "индив") { // Если текущей формат - индивидуальный
-                    newState = allStatesIndividualStart[0]
-                }
-            } else {
-                if (currentFormat == "общ") {
-                    currentIndex = allStatesDefaultStart.indexOf(currentState);
-                    if (currentIndex !== -1 && currentIndex !== allStatesDefaultStart.length - 1) { // Если текущее состояние входит в общее
-                        newState = allStatesDefaultStart[currentIndex + 1];
-                    } else {
-                        newState = allStatesDefault[allStatesDefault.length - 1];
-                    }
-                } else if (currentFormat == "индив") {
-                    currentIndex = allStatesIndividualStart.indexOf(currentState);
-                    if (currentIndex !== -1 && currentIndex !== allStatesIndividualStart.length - 1) { // Если текущее состояние входит в общее
-                        newState = allStatesIndividualStart[currentIndex + 1];
-                    } else {
-                        newState = allStatesDefault[allStatesDefault.length - 1];
-                    }
-                }
+}
+
+// Получение текущего состояния
+function getStateOrder(format) {
+    const baseStates = [
+        'start_gender', 'gender', 'start_middle', 'middle',
+        'start_height', 'height', 'start_format', 'format',
+        'choose_weight', 'price', 'weight', 'fat', 'activity', 'target', 'delivery'
+    ];
+
+    const additionalStates = format === 'общий' ? ['start_choose_weight', 'start_price'] : ['start_weight', 'start_fat', 'start_activity', 'start_target', 'start_calories'];
+
+    return [...baseStates, ...additionalStates];
+}
+
+// Запись обновлённого состояния в базу данных
+async function updateStateInDatabase(userID, newState) {
+    return new Promise((resolve, reject) => {
+        db.run('UPDATE users SET state = ? WHERE user_id = ?', [newState, userID], err => {
+            if (err) {
+                reject(err);
+                return;
             }
-        }
-    }
-
-
-db.run('UPDATE users SET state = ? WHERE user_id = ?', [newState, userID], async err => {
-    if (err) {
-        await logError('Ошибка при обновлении username в базе данных:', err);
-    }
-});
+            resolve();
+        });
+    });
 }
 
 /*********************************************************
