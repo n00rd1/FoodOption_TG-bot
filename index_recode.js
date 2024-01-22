@@ -150,7 +150,33 @@ async function updateGenderDatabase(userId, genderInput) {
         // Здесь можно отправить сообщение пользователю о некорректном вводе
     }
 }
+*/
 
+async function askMale(userId) {
+    // Inline-клавиатура для выбора пола
+    const genderKeyboard = {
+        reply_markup: JSON.stringify({
+            inline_keyboard: [
+                [{ text: '👠 Женщина 👩', callback_data: 'female' }],
+                [{ text: '👔 Мужчина 👨', callback_data: 'male' }]
+            ]
+        })
+    };
+
+    await bot.sendMessage(userId, 'Вы мужчина или женщина?', genderKeyboard);
+}
+
+// Функция для сохранения или обновления пола пользователя
+async function updateGenderDatabase(userId, genderInput) {
+    const validatedGender = (genderInput === 'female' ? 'Ж' : 'М');
+
+    db.run('UPDATE users SET gender = ? WHERE user_id = ?', [validatedGender, userId], async err => {
+        if (err) {
+            await logError('Ошибка при обновлении пола:', err);
+            await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+        }
+    });
+}
 
 /*********************************************************
  *****    *****            ПРОЧЕЕ            *****   *****
@@ -167,6 +193,23 @@ async function forwardAdmin(msg) {
     await bot.forwardMessage(ADMIN_ID, msg.chat.id, msg.message_id); // Пересылка самого документа
 }
 
+// Функция для получения статуса пользователя
+async function getUserState(userID) {
+    return new Promise((resolve, reject) => {
+        db.get('SELECT state FROM users WHERE user_id = ?', [userID], (err, row) => {
+            if (err) {
+                reject(err); // В случае ошибки передаем ее в reject
+                return;
+            }
+            if (row) {
+                resolve(row.state); // Возвращаем статус пользователя
+            } else {
+                resolve(null); // В случае отсутствия пользователя возвращаем null
+            }
+        });
+    });
+}
+
 // Функция для обновления username в базе данных по user_id
 async function updateUsernameInDatabase(userID, newUsername) {
     db.run('UPDATE users SET username = ? WHERE user_id = ?', [newUsername, userID], async err => {
@@ -177,7 +220,7 @@ async function updateUsernameInDatabase(userID, newUsername) {
 }
 
 // Функция для обновления статуса (возможна проблема в работе статусов)
-async function getNextStates(userID) {
+async function setNextStates(userID) {
     try {
         // Получаем текущее состояние и формат из базы данных
         const row = await new Promise((resolve, reject) => {
