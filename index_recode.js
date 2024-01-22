@@ -55,23 +55,21 @@ await console.log(msg);
 
     const text = msg.text || '';
     const msgType = msg.entities ? msg.entities[0].type : 'text';
-    const contact = msg.contact ? msg.contact.phone : 0;
 
     if (msgType === 'bot_command') {
-        // приветственное сообщение
-        if (text === '/start') {
+        if (text === '/start') {        // Приветственное сообщение
             await sayHello(chatID);
         }
-
-        // Настройка БЖУ
-        if (text === '/reset') {
+        else if (text === '/reset') {   // Настройка БЖУ
             await sayHello(chatID, true)
+        }
+        else if (text === '/command') {
+            return;
         }
     } else {
         // Пересылка информации админу
         await notifyAdmin(ADMIN_ID, username, text);
     }
-
 
     // Проверяем, существует ли пользователь в базе данных
     db.get('SELECT * FROM users WHERE user_id = ?', [chatID], async (err, row) => {
@@ -85,7 +83,7 @@ await console.log(msg);
 });
 
 // Отправка приветственного сообщения проверка веса
-async function sayHello(chatID, reset = false) {
+async function sayHello(userId, reset = false) {
     const helloMsg = 'Приветствуем вас в «Food Options»!\n\n' +
         'Я ваш персональный помощник в мире здорового и вкусного питания. Моя миссия - упростить ваш выбор и обеспечить вас сбалансированными и вкусными блюдами, учитывая ваш индивидуальный калораж и особенности здоровья.\n\n' +
         'Что мы можем для вас сделать\n' +
@@ -106,17 +104,12 @@ async function sayHello(chatID, reset = false) {
         '    🍔 Профицит калорий 📈';
 
     if (reset === false) {
-        await bot.sendMessage(chatID, helloMsg);
+        await bot.sendMessage(userId, helloMsg);
     }
 
-    db.run('UPDATE users SET state = ? WHERE user_id = ?', ['start_quick', chatID], async err => {
-        if (err) {
-            await logError('Ошибка при обновлении изменении статуса', err);
-        }
-    });
-
-    await bot.sendMessage(chatID, start_settings);
-    await askMale(chatID);
+    await updateStateInDatabase(userId, 'start_gender');
+    await bot.sendMessage(userId, start_settings);
+    await askMale(userId);
 }
 
 //-----------------------------------------------------------------------------
@@ -163,9 +156,9 @@ async function updateGenderDatabase(userId, genderInput) {
  *****    *****            ПРОЧЕЕ            *****   *****
  *********************************************************/
 // Функция для отправки сообщений администратору
-async function notifyAdmin(chatID, username, text = 'Без текста') {
-    if (ADMIN_ID !== chatID) {
-        await bot.sendMessage(ADMIN_ID, `@${username || chatID}: ${text}`);
+async function notifyAdmin(userId, username, text = 'Без текста') {
+    if (ADMIN_ID !== userId) {
+        await bot.sendMessage(ADMIN_ID, `@${username || userId}: ${text}`);
     }
 }
 
