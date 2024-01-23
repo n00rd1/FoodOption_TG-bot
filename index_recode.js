@@ -53,17 +53,20 @@ await console.log(msg);
     if (msg.from.is_bot)
         return await bot.sendMessage(ADMIN_ID, `@${username}: Обнаружен бот!!`);
 
+    // Если не бот, то проверяю регистрацию
+    await checkUserInDatabase(chatID, username);
+
     const text = msg.text || '';
     const msgType = msg.entities ? msg.entities[0].type : 'text';
 
     if (msgType === 'bot_command') {
         if (text === '/start') {        // Приветственное сообщение
             await sayHello(chatID);
-        }
-        else if (text === '/reset') {   // Настройка БЖУ
+            return ;
+        } else if (text === '/reset') {   // Настройка БЖУ
             await sayHello(chatID, true)
-        }
-        else if (text === '/command') {
+            return;
+        } else if (text === '/command') {
             return;
         }
     } else {
@@ -71,15 +74,52 @@ await console.log(msg);
         await notifyAdmin(ADMIN_ID, username, text);
     }
 
-    // Проверяем, существует ли пользователь в базе данных
-    db.get('SELECT * FROM users WHERE user_id = ?', [chatID], async (err, row) => {
-        //
-        if (err) await logError('Ошибка при проверке пользователя в базе данных:', err);
+    let state = getUserState(chatID);
+    switch (state) {
+        case 'start_gender':
+        case 'gender':
+            await updateGenderDatabase(chatID, text, state);
+            if (state === 'start_gender')
+                await askMiddle(chatID);
+            break;
 
-        // Добавляю нового пользователя
-        if (!row) await giveMeYourPhoneNumber(chatID, username);
-    });
+        case 'start_format':
+        case 'format':
+            await updateFormatDatabase(chatID, text);
+            text === '👥🌍 Общий 🔄📢' ? await askChooseWeight(chatID) : await askWeight(chatID);
+            break;
 
+        case 'start_target':
+        case 'target':
+            await updateTargetDatabase(chatID, text);
+            if (state === 'start_target')
+                await findCaloriesDatabase(chatID, state);
+            break;
+
+        case 'start_choose_weight':
+        case 'choose_weight':
+            await updateChooseWeightDatabase(chatID, text);
+            await askChoosePrice(chatID);
+            break;
+
+        case 'start_activity':
+        case 'activity':
+            await updateActivityDatabase(chatID, text, state);
+            if (state === 'start_activity')
+                await askTarget(chatID);
+            break;
+
+        case 'start_choose_price':
+        case 'choose_price':
+            await updateChoosePriceDatabase(chatID, text, state);
+            if (state === 'start_choose_price')
+                await askDelivery(chatID);
+            break;
+
+        default:
+            await bot.sendMessage(chatID, 'Це шо?');
+            break;
+    }
 });
 
 // Отправка приветственного сообщения проверка веса
@@ -167,10 +207,13 @@ async function askMale(userId) {
 }
 
 // Функция для сохранения или обновления пола пользователя
-async function updateGenderDatabase(userId, genderInput, newState = 'default') {
-    db.run('UPDATE users SET gender = ?, state = ? WHERE user_id = ?', [genderInput, newState, userId], async err => {
+async function updateGenderDatabase(userId, genderInput, state) {
+    let newState = (state !== 'start_gender' ? 'default' : 'start_middle');
+    const validatedGender = (genderInput === '👔 Мужчина 👨' ? 'М' : 'Ж');
+
+    db.run('UPDATE users SET gender = ?, state = ? WHERE user_id = ?', [validatedGender, newState, userId], async err => {
         if (err) {
-            await logError('Ошибка при обновлении пола:', err);
+            await logError(`Ошибка при обновлении пола: ${err}`);
             await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
         }
     });
@@ -216,12 +259,13 @@ async function askFormat(userId) {
 }
 
 // Функция для сохранения или обновления варианта питания пользователя
-async function updateFormatDatabase(userId, formatInput, newState = 'default') {
+async function updateFormatDatabase(userId, formatInput) {
     const validatedFormat = (formatInput === '👥🌍 Общий 🔄📢' ? 'общ' : 'индив');
+    let newState = (validatedFormat === 'индив' ? 'start_weight' : 'start_choose_weight');
 
-    db.run('UPDATE users SET format = ? WHERE user_id = ?', [validatedFormat, userId], async err => {
+    db.run('UPDATE users SET format = ?, state = ? WHERE user_id = ?', [validatedFormat, newState, userId], async err => {
         if (err) {
-            await logError('Ошибка при обновлении формата питания:', err);
+            await logError(`Ошибка при обновлении формата питания: ${err}`);
             await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
         }
     });
@@ -249,9 +293,33 @@ async function askChooseWeight(userId) {
     await bot.sendMessage(userId, 'Выберите ваш вес:', chooseWeightKeyboard);
 }
 
+// Функция для валидации и получения значения коэффициента активности
+async function validateAndGetChooseWeight(chooseWeightInput) {
+    const chooseWeight = {
+        '55-60 🥦': 55,
+        '65-70 🍇': 65,
+        '75-80 🍏': 75,
+        '85-90 🍊': 85,
+        '95-100 🍖': 95,
+        '105-110 🍰': 105,
+        '115-120 🍕': 115,
+        '125-130 🍔': 125
+    };
+
+    return chooseWeight[chooseWeightInput] || null;
+}
+
 // Функция для сохранения или обновления пола пользователя
 async function updateChooseWeightDatabase(userId, weightInput, newState = 'default') {
+async function updateChooseWeightDatabase(userId, chooseWeightInput) {
+    const validatedChooseWeight = validateAndGetChooseWeight(chooseWeightInput);
 
+    db.run('UPDATE users SET weight = ?, state = ? WHERE user_id = ?', [validatedChooseWeight, 'start_price', userId], async err => {
+        if (err) {
+            await logError(`Ошибка при обновлении веса: ${err}`);
+            await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+        }
+    });
 }
 /*********************************************************
  *****    *****    ВЫБОР ИЗ ВАРИАНТОВ ЦЕНЫ   *****   *****
@@ -270,8 +338,20 @@ async function askChoosePrice(userId) {
     await bot.sendMessage(userId, 'Выберите пакет с ценой:', choosePriceKeyboard);
 }
 
+// Функция для валидации цены
+async function validateAndGetChoosePrice(choosePriceInput) {
+    const choosePrice = {
+        'X': 1,
+        'Y': 2
+    };
+
+    return choosePrice[choosePriceInput] || null;
+}
+
 // Функция для сохранения или обновления цены выбранной пользователем
-async function updateChoosePriceDatabase(userId, priceInput, newState = 'default') {
+async function updateChoosePriceDatabase(userId, choosePriceInput, state) {
+    const newActivityCoefficient = validateAndGetChoosePrice(choosePriceInput);
+    let newState = (state === 'start_choose_price' ? 'delivery' : 'default');
 
 }
 /*********************************************************
@@ -335,18 +415,19 @@ async function validateAndGetActivityCoefficient(activityDescription) {
 }
 
 // Функция для сохранения или обновления параметров активности
-async function updateActivityDatabase(userId, activityDescription) {
+async function updateActivityDatabase(userId, activityDescription, state) {
     const newActivityCoefficient = validateAndGetActivityCoefficient(activityDescription);
+    let newState = (state === 'start_activity' ? 'start_target' : 'default');
 
     if (newActivityCoefficient !== null) {
-        db.run('UPDATE users SET activity = ? WHERE user_id = ?', [newActivityCoefficient, userId], async err => {
+        db.run('UPDATE users SET activity = ?, state = ? WHERE user_id = ?', [newActivityCoefficient, newState, userId], async err => {
             if (err) {
-                await logError('Ошибка при обновлении параметров активности:', err);
+                await logError(`Ошибка при обновлении параметров активности: ${err}`);
             }
         });
     } else {
-        //await logError('Некорректное описание активности:', activityDescription);
-        // Здесь вы можете отправить сообщение пользователю о том, что введено некорректное описание активности
+        await logError(`Некорректное описание активности: ${activityDescription}`);
+        await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
     }
 }
 
@@ -354,74 +435,77 @@ async function updateActivityDatabase(userId, activityDescription) {
  *****    *****             ЦЕЛЬ             *****   *****
  *********************************************************/
 async function askTarget(userId) {
-    const choosePriceKeyboard = {
+    const targerKeyboard = {
         reply_markup: JSON.stringify({
             keyboard: [
-                { text: '🥦'},
-                { text: '🍔'}
+                { text: '🏋️‍♀️🥗 Похудеть 🏃‍♀️️' },
+                { text: '🍔🛋️ Потолстеть 🍰' }
             ],
             one_time_keyboard: true
         })
     };
 
-    await bot.sendMessage(userId, 'Выберите пакет с ценой:', choosePriceKeyboard);
+    await bot.sendMessage(userId, 'Выберите цель питания:', targerKeyboard);
 }
 
 // Функция для сохранения или обновления цены выбранной пользователем
 async function updateTargetDatabase(userId, targetInput, newState = 'default') {
+// Функция для сохранения или обновления цели выбранной пользователем
+async function updateTargetDatabase(userId, targetInput) {
+    db.run('UPDATE users SET target = ?, state = ? WHERE user_id = ?', [targetInput, 'calories', userId], async err => {
+        if (err) {
+            await logError(`Ошибка при обновлении формата питания: ${err}`);
+            await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+        }
+    });
 
 }
 /*********************************************************
  *****    *****           КАЛОРИИ            *****   *****
  *********************************************************/
-async function askCalories(userId) {
-    const choosePriceKeyboard = {
+// Функция для просчёта, обновления и вывода
+async function findCaloriesDatabase(userId, state) {
+
+}
+/*********************************************************
+ *****    *****           Доставка            *****   *****
+ *********************************************************/
+/*async function askDelivery(userId) {
+    const deliveryKeyboard = {
         reply_markup: JSON.stringify({
             keyboard: [
-                { text: '🥦'},
-                { text: '🍔'}
+                { text: '🌅☕ Утро (7-9) 🍳' },
+                { text: '🌆🍷 Вечер (21-23) 🌙' }
             ],
             one_time_keyboard: true
         })
     };
 
-    await bot.sendMessage(userId, 'Выберите пакет с ценой:', choosePriceKeyboard);
+    await bot.sendMessage(userId, 'Выберите время доставки:', deliveryKeyboard);
 }
 
-// Функция для сохранения или обновления Калорий
-async function updateCaloriesDatabase(userId, priceCalories, newState = 'default') {
-
-}
+// Функция для сохранения или обновления цели выбранной пользователем
+async function updateDeliveryDatabase(userId, targetInput) {
+    db.run('UPDATE users SET delivery = ?, state = ? WHERE user_id = ?', [targetInput, 'calories', userId], async err => {
+        if (err) {
+            await logError(`Ошибка при обновлении формата питания: ${err}`);
+            await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+        }
+    });
+}*/
 /*********************************************************
  *****    *****            ПРОЧЕЕ            *****   *****
  *********************************************************/
-// Функция для отправки сообщений администратору
-async function notifyAdmin(userId, username, text = 'Без текста') {
-    if (ADMIN_ID !== userId) {
-        await bot.sendMessage(ADMIN_ID, `@${username || userId}: ${text}`);
-    }
-}
-
-// Функция для пересылки сообщений администратору
-async function forwardAdmin(msg) {
-    await bot.forwardMessage(ADMIN_ID, msg.chat.id, msg.message_id); // Пересылка самого документа
-}
-
 // Функция для получения статуса пользователя
 async function getUserState(userID) {
-    return new Promise((resolve, reject) => {
-        db.get('SELECT state FROM users WHERE user_id = ?', [userID], (err, row) => {
-            if (err) {
-                reject(err); // В случае ошибки передаем ее в reject
-                return;
-            }
-            if (row) {
-                resolve(row.state); // Возвращаем статус пользователя
-            } else {
-                resolve(null); // В случае отсутствия пользователя возвращаем null
-            }
-        });
-    });
+    try {
+        const row = await db.get('SELECT state FROM users WHERE user_id = ?', [userID]);
+        return row ? row.state : null; // Возвращаем статус или null, если пользователь не найден
+    } catch (err) {
+        // Логируем ошибку и перебрасываем её дальше
+        await logError(`Ошибка при получении статуса пользователя: ${err}`);
+        throw err;
+    }
 }
 
 
@@ -440,47 +524,6 @@ async function getGenderUser(userID) {
             }
         });
     });
-}
-
-// Функция для обновления username в базе данных по user_id
-async function updateUsernameInDatabase(userID, newUsername) {
-    db.run('UPDATE users SET username = ? WHERE user_id = ?', [newUsername, userID], async err => {
-        if (err) {
-            await logError('Ошибка при обновлении username в базе данных:', err);
-        }
-    });
-}
-
-// Функция для обновления статуса (возможна проблема в работе статусов)
-async function setNextStates(userID) {
-    try {
-        // Получаем текущее состояние и формат из базы данных
-        const row = await new Promise((resolve, reject) => {
-            db.get('SELECT state, format FROM users WHERE user_id = ?', [userID], (err, row) => {
-                if (err) {
-                    reject(err);
-                    return;
-                }
-                resolve(row);
-            });
-        });
-
-        if (!row) {
-            await logError('Пользователь не найден в базе данных');
-            return;
-        }
-
-        const { state: currentState, format: currentFormat } = row;
-        const stateOrder = getStateOrder(currentState, currentFormat);
-        const newState = stateOrder.indexOf(currentState);
-
-        // Обновляем состояние в базе данных
-        if (newState) {
-            await updateStateInDatabase(userID, newState);
-        }
-    } catch (err) {
-        await logError('Ошибка при обновлении статуса в базе данных:', err);
-    }
 }
 
 // Получение текущего состояния
@@ -517,20 +560,20 @@ function getStateOrder(currentState, currentFormat) {
             if (currentIndex !== -1 && currentIndex !== allStatesStart.length - 1) { // Если текущее состояние входит в начальное
                 newState = allStatesStart[currentIndex + 1];
             } else if (currentIndex === allStatesStart.length - 1) { // Если текущее состояние входит в начальное и оно последнее
-                if (currentFormat == "общ") { // Если текущей формат - общий
+                if (currentFormat === "общ") { // Если текущей формат - общий
                     newState = allStatesDefaultStart[0];
-                } else if (currentFormat == "индив") { // Если текущей формат - индивидуальный
+                } else if (currentFormat === "индив") { // Если текущей формат - индивидуальный
                     newState = allStatesIndividualStart[0]
                 }
             } else {
-                if (currentFormat == "общ") {
+                if (currentFormat === "общ") {
                     currentIndex = allStatesDefaultStart.indexOf(currentState);
                     if (currentIndex !== -1 && currentIndex !== allStatesDefaultStart.length - 1) { // Если текущее состояние входит в общее
                         newState = allStatesDefaultStart[currentIndex + 1];
                     } else {
                         newState = allStatesDefault[allStatesDefault.length - 1];
                     }
-                } else if (currentFormat == "индив") {
+                } else if (currentFormat === "индив") {
                     currentIndex = allStatesIndividualStart.indexOf(currentState);
                     if (currentIndex !== -1 && currentIndex !== allStatesIndividualStart.length - 1) { // Если текущее состояние входит в общее
                         newState = allStatesIndividualStart[currentIndex + 1];
@@ -542,6 +585,86 @@ function getStateOrder(currentState, currentFormat) {
         }
     }
     return newState;
+}
+
+// Функция для получения следующего статуса (возможна проблема в работе статусов)
+async function setNextStates(userID) {
+    try {
+        const row = await new Promise((resolve, reject) => {
+            db.get('SELECT state, format FROM users WHERE user_id = ?', [userID], (err, row) => {
+                if (err) {
+                    logError(`Ошибка при получении состояния и формата из базы данных: ${err}`).then(() => {
+                        reject(err);
+                    });
+                    return;
+                }
+                resolve(row);
+            });
+        });
+
+        if (!row) {
+            await logError('Пользователь не найден в базе данных');
+            return;
+        }
+
+        const { state: currentState, format: currentFormat } = row;
+        const newState = getNextState(currentState, currentFormat);
+
+        if (newState !== null) {
+            await updateStateInDatabase(userID, newState);
+        }
+    } catch (err) {
+        await logError(`Ошибка при обновлении статуса в базе данных: ${err}`);
+    }
+}
+
+// Функция для создания нового пользователя
+async function checkUserInDatabase(userID, username) {
+    try {
+        // Проверяем, существует ли уже пользователь с таким userID
+        const existingUser = await new Promise((resolve, reject) => {
+            db.get('SELECT user_id FROM users WHERE user_id = ?', [userID], (err, row) => {
+                if (err) {
+                    logError(`Ошибка при проверке существования пользователя: ${err}`).then(() => {
+                        reject(err);
+                    });
+                    return;
+                }
+                resolve(row);
+            });
+        });
+
+        // Если пользователь уже существует, просто возвращаем
+        if (existingUser) {
+            return;
+        }
+
+        // Создаем нового пользователя, если он не найден
+        await new Promise((resolve, reject) => {
+            const query = 'INSERT INTO users (user_id, username) VALUES (?, ?)';
+            db.run(query, [userID, username], (err) => {
+                if (err) {
+                    logError(`Ошибка при создании пользователя: ${err}`).then(() => {
+                        reject(err);
+                    });
+                    return;
+                }
+                resolve(); // Успешное выполнение
+            });
+        });
+    } catch (err) { // Обработка возможных ошибок
+        await logError(`Ошибка при создании или проверке пользователя: ${err}`);
+        await bot.sendMessage(userID, 'Проблема в работе бота, попробуйте позже!');
+    }
+}
+
+// Функция для обновления username в базе данных по user_id
+async function updateUsernameInDatabase(userID, newUsername) {
+    db.run('UPDATE users SET username = ? WHERE user_id = ?', [newUsername, userID], async err => {
+        if (err) {
+            await logError(`Ошибка при обновлении username в базе данных: ${err}`);
+        }
+    });
 }
 
 // Запись обновлённого состояния в базу данных
@@ -556,14 +679,25 @@ async function updateStateInDatabase(userID, newState) {
         });
     });
 }
-
 /*********************************************************
  ***    *****   ВАЖНЫЕ ЧАСТИ ДЛЯ РАБОТЫ       ****   *****
  *********************************************************/
+// Функция для отправки сообщений администратору
+async function notifyAdmin(userId, username, text = 'Без текста') {
+//    if (ADMIN_ID !== userId) {
+        await bot.sendMessage(ADMIN_ID, `@${username || userId}: ${text}`);
+//    }
+}
+
+// Функция для пересылки сообщений администратору
+async function forwardAdmin(msg) {
+    await bot.forwardMessage(ADMIN_ID, msg.chat.id, msg.message_id); // Пересылка самого документа
+}
+
 // Обработчик ошибок базы данных
 db.on('error', async err => {
     await notifyAdmin(ADMIN_ID, '', 'База данных поела говна');
-    await logError('Ошибка базы данных:', err);
+    await logError(`Ошибка базы данных: ${err}`);
 });
 
 // Закрываем базу данных при выходе из приложения
@@ -571,7 +705,7 @@ process.on('exit', async () => {
     db.close(async err => {
         if (err) {
             await notifyAdmin(ADMIN_ID, '', 'Ошибка при закрытии базы данных');
-            await logError('Ошибка при закрытии базы данных:', err)
+            await logError(`Ошибка при закрытии базы данных: ${err}`);
         }
     });
 });
@@ -585,7 +719,7 @@ const updatePhoneNumber = async (userID, phoneNumber) => {
         await db.run('UPDATE users SET phone = ? WHERE user_id = ?', [phoneNumber, userID]);
         await logError(`Номер телефона обновлен для пользователя ${userID}`);
     } catch (err) {
-        await logError('Ошибка при обновлении номера телефона в базе данных:', err);
+        await logError(`Ошибка при обновлении номера телефона в базе данных:${err}`);
         await bot.sendMessage(userID, 'Произошла ошибка при обновлении вашего номера телефона. Пожалуйста, попробуйте снова.');
     }
 };
