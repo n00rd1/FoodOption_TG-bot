@@ -499,11 +499,26 @@ async function updateDeliveryDatabase(userId, targetInput) {
 // Функция для получения статуса пользователя
 async function getUserState(userID) {
     try {
-        const row = await db.get('SELECT state FROM users WHERE user_id = ?', [userID]);
-        return row ? row.state : null; // Возвращаем статус или null, если пользователь не найден
+        // Асинхронно получаем статус пользователя из базы данных
+        const row = await new Promise((resolve, reject) => {
+            db.get('SELECT state FROM users WHERE user_id = ?', [userID], (err, row) => {
+                if (err) {
+                    // Логируем ошибку и перебрасываем её дальше
+                    logError(`Ошибка при получении статуса пользователя: ${err}`).then(() => {
+                        reject(err);
+                    });
+                    return;
+                }
+                resolve(row);
+            });
+        });
+
+        // Возвращаем статус пользователя или null, если пользователь не найден
+        return row ? row.state : null;
     } catch (err) {
         // Логируем ошибку и перебрасываем её дальше
         await logError(`Ошибка при получении статуса пользователя: ${err}`);
+        // В зависимости от вашей логики работы с ботом, здесь может быть код для отправки сообщения пользователю
         throw err;
     }
 }
