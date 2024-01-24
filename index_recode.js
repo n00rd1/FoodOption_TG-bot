@@ -123,7 +123,7 @@ await console.log(msg);
 });
 
 // Отправка приветственного сообщения проверка веса
-async function sayHello(userId, reset = false) {
+async function sayHello(userId) {
     const helloMsg = 'Приветствуем вас в «Food Options»!\n\n' +
         'Я ваш персональный помощник в мире здорового и вкусного питания. Моя миссия - упростить ваш выбор и обеспечить вас сбалансированными и вкусными блюдами, учитывая ваш индивидуальный калораж и особенности здоровья.\n\n' +
         'Что мы можем для вас сделать\n' +
@@ -135,71 +135,32 @@ async function sayHello(userId, reset = false) {
         'Следите за нашими обновлениями и специальными предложениями в Instagram: https://www.instagram.com/foodoptions.kz/\n\n' +
         'Если у вас возникнут вопросы или понадобится помощь, не стесняйтесь обращаться. Мы также доступны в WhatsApp: https://wa.me/77776886396\n\n' +
         'Приятного аппетита и заботы о своем здоровье! 🍽️🌿';
-
-    const start_settings = 'Для примерного просчёта уникальных параметров для вас необходимо заполнить простую анкету, для этого ответьте на вопросы ниже.\n\n' +
+/*
+    const startSettings = 'Для примерного просчёта уникальных параметров для вас необходимо заполнить простую анкету, для этого ответьте на вопросы ниже.\n\n' +
         'Необходимо будет указать следующие параметры:' +
         '    🤸⚖️ Общая масса тела / кг ⚖️\n' +
         '    🤸‍♀️ % жира 🤸‍♀️\n' +
         '    🍽️ Дефицит калорий 📉\n' +
         '    🍔 Профицит калорий 📈';
-
-    if (reset === false) {
-        await bot.sendMessage(userId, helloMsg);
-    }
+*/
 
     await updateStateInDatabase(userId, 'start_gender');
-    await bot.sendMessage(userId, start_settings);
+    await bot.sendMessage(userId, helloMsg);
     await askMale(userId);
 }
 
-//-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------
-// -----    -----   ПОЛ
-// Вопрос про пол
-/*async function askMale(userId){
-    // Клавиатура для выбора пола
-    const genderKeyboard  = {
-        reply_markup: {
-            one_time_keyboard: true,
-            keyboard: [
-                [
-                    { text: '👠 Женщина 👩'},
-                    { text: '👔 Мужчина 👨'}
-                ]
-            ],
-        },
-    };
-
-    await bot.sendMessage(userId, 'Вы мужчина или женщина?', genderKeyboard);
-}
-
-// Функция для сохранения или обновления пола пользователя
-async function updateGenderDatabase(userId, genderInput) {
-    const validatedGender = (genderInput === '👠 Женщина 👩' ? 'Ж': 'M');
-
-    if (validatedGender !== null) {
-        db.run('UPDATE users SET gender = ? WHERE user_id = ?', [validatedGender, userId], async err => {
-            if (err) {
-                await logError(`Ошибка при обновлении пола: ${err}`);
-                // Сообщение пользователю о возникшей ошибке
-                await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
-            }
-        });
-    } else {
-        await logError(`Некорректное значение пола: ${genderInput}`);
-        // Здесь можно отправить сообщение пользователю о некорректном вводе
-    }
-}
-*/
-
+/*********************************************************
+ *****    *****            ПОЛ               *****   *****
+ *********************************************************/
 async function askMale(userId) {
     const genderKeyboard = {
         reply_markup: JSON.stringify({
             keyboard: [
-                [{ text: '👠 Женщина 👩' }],
-                [{ text: '👔 Мужчина 👨' }]
-            ],
-            one_time_keyboard: true
+                [
+                    { text: '👔 Мужчина 👨' },
+                    { text: '👠 Женщина 👩' }
+                ]
+            ]
         })
     };
 
@@ -223,7 +184,7 @@ async function updateGenderDatabase(userId, genderInput, state) {
  *****    *****            ТАЛИЯ            *****   *****
  *********************************************************/
 async function askMiddle(userId) {
-
+    await bot.sendMessage(userId, '📏 Укажите размер вашей талии (например, 90) 👖');
 }
 
 // Функция для валидации и сохранения обхвата талии
@@ -235,7 +196,7 @@ async function updateMiddleDatabase(userId, middleInput, newState = 'default') {
  *********************************************************/
 // Функция для запроса роста пользователя
 async function askHeight(userId) {
-
+    await bot.sendMessage(userId, '📏 Укажите ваш рост (например, 185) 👤');
 }
 
 async function updateHeightDatabase(userId, heightInput, newState = 'default') {
@@ -247,11 +208,14 @@ async function updateHeightDatabase(userId, heightInput, newState = 'default') {
 async function askFormat(userId) {
     const genderKeyboard = {
         reply_markup: JSON.stringify({
+            one_time_keyboard: true,
+            resize_keyboard: true,
             keyboard: [
-                [{ text: '👥🌍 Общий 🔄📢' }],
-                [{ text: '👤💡 Индивидуальный 🌟🔍' }]
-            ],
-            one_time_keyboard: true
+                [
+                    { text: '👥🌍 Общий 🔄📢' },
+                    { text: '👤💡 Индивидуальный 🌟🔍' }
+                ]
+            ]
         })
     };
 
@@ -263,12 +227,22 @@ async function updateFormatDatabase(userId, formatInput) {
     const validatedFormat = (formatInput === '👥🌍 Общий 🔄📢' ? 'общ' : 'индив');
     let newState = (validatedFormat === 'индив' ? 'start_weight' : 'start_choose_weight');
 
-    db.run('UPDATE users SET format = ?, state = ? WHERE user_id = ?', [validatedFormat, newState, userId], async err => {
-        if (err) {
-            await logError(`Ошибка при обновлении формата питания: ${err}`);
-            await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
-        }
-    });
+    try {
+        await new Promise((resolve, reject) => {
+            db.run('UPDATE users SET format = ?, state = ? WHERE user_id = ?', [validatedFormat, newState, userId], (err) => {
+                if (err) {
+                    logError(`Ошибка при обновлении формата питания: ${err}`).then(() => {
+                        reject(err);
+                    });
+                    return;
+                }
+                resolve();
+            });
+        });
+    } catch (err) {
+        // Обработка ошибок, возникших при обновлении формата питания
+        await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+    }
 }
 /*********************************************************
  *****    *****    ВЫБОР ИЗ ВАРИАНТОВ ВЕСА   *****   *****
@@ -276,17 +250,26 @@ async function updateFormatDatabase(userId, formatInput) {
 async function askChooseWeight(userId) {
     const chooseWeightKeyboard = {
         reply_markup: JSON.stringify({
+            one_time_keyboard: true,
+            resize_keyboard: true,
             keyboard: [
-                { text: '55-60 🥦'},
-                { text: '65-70 🍇'},
-                { text: '75-80 🍏'},
-                { text: '85-90 🍊'},
-                { text: '95-100 🍖'},
-                { text: '105-110 🍰'},
-                { text: '115-120 🍕'},
-                { text: '125-130 🍔'}
-            ],
-            one_time_keyboard: true
+                [
+                    { text: '55-60 🥦'},
+                    { text: '65-70 🍇'}
+                ],
+                [
+                    { text: '75-80 🍏'},
+                    { text: '85-90 🍊'}
+                ],
+                [
+                    { text: '95-100 🍖'},
+                    { text: '105-110 🍰'}
+                ],
+                [
+                    { text: '115-120 🍕'},
+                    { text: '125-130 🍔'}
+                ]
+            ]
         })
     };
 
@@ -313,12 +296,22 @@ async function validateAndGetChooseWeight(chooseWeightInput) {
 async function updateChooseWeightDatabase(userId, chooseWeightInput) {
     const validatedChooseWeight = validateAndGetChooseWeight(chooseWeightInput);
 
-    db.run('UPDATE users SET weight = ?, state = ? WHERE user_id = ?', [validatedChooseWeight, 'start_price', userId], async err => {
-        if (err) {
-            await logError(`Ошибка при обновлении веса: ${err}`);
-            await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
-        }
-    });
+    try {
+        await new Promise((resolve, reject) => {
+            db.run('UPDATE users SET weight = ?, state = ? WHERE user_id = ?', [validatedChooseWeight, 'start_price', userId], (err) => {
+                if (err) {
+                    logError(`Ошибка при обновлении веса: ${err}`).then(() => {
+                        reject(err);
+                    });
+                    return;
+                }
+                resolve();
+            });
+        });
+    } catch (err) {
+        // Обработка ошибок, возникших при обновлении веса
+        await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+    }
 }
 /*********************************************************
  *****    *****    ВЫБОР ИЗ ВАРИАНТОВ ЦЕНЫ   *****   *****
@@ -326,11 +319,12 @@ async function updateChooseWeightDatabase(userId, chooseWeightInput) {
 async function askChoosePrice(userId) {
     const choosePriceKeyboard = {
         reply_markup: JSON.stringify({
+            one_time_keyboard: true,
+            resize_keyboard: true,
             keyboard: [
                 { text: '🥦'},
                 { text: '🍔'}
-            ],
-            one_time_keyboard: true
+            ]
         })
     };
 
@@ -352,12 +346,15 @@ async function updateChoosePriceDatabase(userId, choosePriceInput, state) {
     const newActivityCoefficient = validateAndGetChoosePrice(choosePriceInput);
     let newState = (state === 'start_choose_price' ? 'delivery' : 'default');
 
+    // Обработка ошибок, возникших при обновлении веса
+    await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+
 }
 /*********************************************************
  *****    *****              ВЕС             *****   *****
  *********************************************************/
 async function askWeight(userId) {
-    await bot.sendMessage(userId, 'Введите ваш вес:');
+    await bot.sendMessage(userId, '📊 Введите ваш вес (например, 88,5) 🏋️‍♂️:');
 }
 
 // Функция для сохранения или обновления веса пользователя
@@ -369,7 +366,7 @@ async function updateWeightDatabase(userId, weightInput, newState = 'default') {
  *****    *****             ЖИР              *****   *****
  *********************************************************/
 async function askFat(userId) {
-    await bot.sendMessage(userId, 'Введите процент вашего жира (например, 0,25):');
+    await bot.sendMessage(userId, '💪 Введите процент вашего жира (например, 0,25) 📉:');
 }
 
 // Функция для сохранения или обновления пола пользователя
@@ -382,6 +379,8 @@ async function updateFatDatabase(userId, fatInput, newState = 'default') {
 async function askActive(chatID) {
     const activeKeyboard = {
         reply_markup: JSON.stringify({
+            one_time_keyboard: true,
+            resize_keyboard: true,
             keyboard: [
                 { text: '👩‍💻 Бытовая деятельность (сидячая работа) 🏠' },
                 { text: '🏋️‍♂️ Фитнес тренировки 3 раза/неделю 💪' },
@@ -389,12 +388,11 @@ async function askActive(chatID) {
                 { text: '🏋️‍♀️ Фитнес тренировки 6 раз/неделю 💦' },
                 { text: '️‍♂️ Интенсивные тренировки 6 раз/неделю 💦' },
                 { text: '️🏋️‍♀️🌞 Интенсивные тренировки 6 раз/неделю (2 раза/день) 💦🌙' }
-            ],
-            one_time_keyboard: true
+            ]
         })
     };
 
-    const active = 'Выберите наиболее близкий для вас вариант ежедневной активности?';
+    const active = '🏃‍♂️🚴‍♀️ Выберите наиболее близкий для вас вариант ежедневной активности? 🧘‍♂️📊';
     await bot.sendMessage(chatID, active, activeKeyboard);
 }
 
@@ -418,29 +416,40 @@ async function updateActivityDatabase(userId, activityDescription, state) {
     const newActivityCoefficient = validateAndGetActivityCoefficient(activityDescription);
     let newState = (state === 'start_activity' ? 'start_target' : 'default');
 
-    if (newActivityCoefficient !== null) {
-        db.run('UPDATE users SET activity = ?, state = ? WHERE user_id = ?', [newActivityCoefficient, newState, userId], async err => {
-            if (err) {
-                await logError(`Ошибка при обновлении параметров активности: ${err}`);
-            }
-        });
-    } else {
+    if (newActivityCoefficient === null) {
         await logError(`Некорректное описание активности: ${activityDescription}`);
+        await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, укажите корректные данные.');
+    }
+
+    try {
+        await new Promise((resolve, reject) => {
+            db.run('UPDATE users SET activity = ?, state = ? WHERE user_id = ?', [newActivityCoefficient, newState, userId], (err) => {
+                if (err) {
+                    logError(`Ошибка при обновлении параметров активности: ${err}`).then(() => {
+                        reject(err);
+                    });
+                    return;
+                }
+                resolve();
+            });
+        });
+    } catch (err) {
+        // Обработка ошибок, возникших при обновлении активности
         await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
     }
 }
-
 /*********************************************************
  *****    *****             ЦЕЛЬ             *****   *****
  *********************************************************/
 async function askTarget(userId) {
     const targerKeyboard = {
         reply_markup: JSON.stringify({
+            one_time_keyboard: true,
+            resize_keyboard: true,
             keyboard: [
                 { text: '🏋️‍♀️🥗 Похудеть 🏃‍♀️️' },
                 { text: '🍔🛋️ Потолстеть 🍰' }
-            ],
-            one_time_keyboard: true
+            ]
         })
     };
 
@@ -449,13 +458,22 @@ async function askTarget(userId) {
 
 // Функция для сохранения или обновления цели выбранной пользователем
 async function updateTargetDatabase(userId, targetInput) {
-    db.run('UPDATE users SET target = ?, state = ? WHERE user_id = ?', [targetInput, 'calories', userId], async err => {
-        if (err) {
-            await logError(`Ошибка при обновлении формата питания: ${err}`);
-            await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
-        }
-    });
-
+    try {
+        await new Promise((resolve, reject) => {
+            db.run('UPDATE users SET target = ?, state = ? WHERE user_id = ?', [targetInput, 'calories', userId], (err) => {
+                if (err) {
+                    logError(`Ошибка при обновлении цели: ${err}`).then(() => {
+                        reject(err);
+                    });
+                    return;
+                }
+                resolve();
+            });
+        });
+    } catch (err) {
+        // Обработка ошибок, возникших при обновлении цели
+        await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+    }
 }
 /*********************************************************
  *****    *****           КАЛОРИИ            *****   *****
@@ -470,11 +488,12 @@ async function findCaloriesDatabase(userId, state) {
 /*async function askDelivery(userId) {
     const deliveryKeyboard = {
         reply_markup: JSON.stringify({
+            one_time_keyboard: true,
+            resize_keyboard: true,
             keyboard: [
                 { text: '🌅☕ Утро (7-9) 🍳' },
                 { text: '🌆🍷 Вечер (21-23) 🌙' }
-            ],
-            one_time_keyboard: true
+            ]
         })
     };
 
@@ -521,19 +540,25 @@ async function getUserState(userID) {
 
 // Получить гендер пользователя
 async function getGenderUser(userID) {
-    return new Promise((resolve, reject) => {
-        db.get('SELECT gender FROM users WHERE user_id = ?', [userID], (err, row) => {
-            if (err) {
-                reject(err); // В случае ошибки передаем ее в reject
-                return;
-            }
-            if (row) {
-                resolve(row.gender); // Возвращаем статус пользователя
-            } else {
-                resolve(null); // В случае отсутствия пользователя возвращаем null
-            }
+    try {
+        const row = await new Promise((resolve, reject) => {
+            db.get('SELECT gender FROM users WHERE user_id = ?', [userID], (err, row) => {
+                if (err) {
+                    logError(`Ошибка при получении пола пользователя: ${err}`);
+                    reject(err);
+                    return;
+                }
+                resolve(row);
+            });
         });
-    });
+
+        // Возвращаем пол пользователя или null, если пользователь не найден
+        return row ? row.gender : null;
+    } catch (err) {
+        // Обработка и логирование ошибок
+        await logError(`Ошибка при получении пола пользователя для user_id ${userID}: ${err}`);
+        throw err; // Перебрасываем ошибку дальше
+    }
 }
 
 // Получение текущего состояния
@@ -622,11 +647,15 @@ async function setNextStates(userID) {
 
         if (newState !== null) {
             await updateStateInDatabase(userID, newState);
+        } else {
+            // Обработка ситуации, когда следующее состояние не может быть определено
+            await logError(`Невозможно определить следующее состояние для пользователя с ID ${userID}`);
         }
     } catch (err) {
         await logError(`Ошибка при обновлении статуса в базе данных: ${err}`);
     }
 }
+
 
 // Функция для создания нового пользователя
 async function checkUserInDatabase(userID, username) {
@@ -670,24 +699,40 @@ async function checkUserInDatabase(userID, username) {
 
 // Функция для обновления username в базе данных по user_id
 async function updateUsernameInDatabase(userID, newUsername) {
-    db.run('UPDATE users SET username = ? WHERE user_id = ?', [newUsername, userID], async err => {
-        if (err) {
-            await logError(`Ошибка при обновлении username в базе данных: ${err}`);
-        }
-    });
+    try {
+        await new Promise((resolve, reject) => {
+            db.run('UPDATE users SET username = ? WHERE user_id = ?', [newUsername, userID], (err) => {
+                if (err) {
+                    logError(`Ошибка при обновлении username в базе данных: ${err}`).then(() => {
+                        reject(err);
+                    });
+                    return;
+                }
+                resolve();
+            });
+        });
+    } catch (err) {
+        await logError(`Ошибка при обновлении имени пользователя в базе данных: ${err}`);
+    }
 }
 
 // Запись обновлённого состояния в базу данных
 async function updateStateInDatabase(userID, newState) {
-    return new Promise((resolve, reject) => {
-        db.run('UPDATE users SET state = ? WHERE user_id = ?', [newState, userID], err => {
-            if (err) {
-                reject(err);
-                return;
-            }
-            resolve();
+    try {
+        await new Promise((resolve, reject) => {
+            db.run('UPDATE users SET state = ? WHERE user_id = ?', [newState, userID], (err) => {
+                if (err) {
+                    logError(`Ошибка при обновлении состояния в базе данных для userID ${userID}: ${err}`).then(() => {
+                        reject(err);
+                    });
+                    return;
+                }
+                resolve();
+            });
         });
-    });
+    } catch (err) {
+        await logError(`Ошибка при обновлении состояния в базе данных: ${err}`);
+    }
 }
 /*********************************************************
  ***    *****   ВАЖНЫЕ ЧАСТИ ДЛЯ РАБОТЫ       ****   *****
@@ -726,10 +771,18 @@ process.on('exit', async () => {
 // Обновление номера телефона в базе данных
 const updatePhoneNumber = async (userID, phoneNumber) => {
     try {
-        await db.run('UPDATE users SET phone = ? WHERE user_id = ?', [phoneNumber, userID]);
-        await logError(`Номер телефона обновлен для пользователя ${userID}`);
+        await new Promise((resolve, reject) => {
+            db.run('UPDATE users SET phone = ? WHERE user_id = ?', [phoneNumber, userID], (err) => {
+                if (err) {
+                    reject(err);
+                    return;
+                }
+                resolve();
+            });
+        });
+        console.log(`Номер телефона обновлен для пользователя ${userID}`); // Используем console.log для успешных операций
     } catch (err) {
-        await logError(`Ошибка при обновлении номера телефона в базе данных:${err}`);
+        await logError(`Ошибка при обновлении номера телефона в базе данных: ${err}`);
         await bot.sendMessage(userID, 'Произошла ошибка при обновлении вашего номера телефона. Пожалуйста, попробуйте снова.');
     }
 };
