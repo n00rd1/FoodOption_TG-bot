@@ -74,7 +74,7 @@ await console.log(msg);
         await notifyAdmin(ADMIN_ID, username, text);
     }
 
-    let state = getUserState(chatID);
+    let state = await getUserState(chatID);
     switch (state) {
         case 'start_gender':
         case 'gender':
@@ -180,13 +180,13 @@ async function updateGenderDatabase(userId, genderInput) {
     if (validatedGender !== null) {
         db.run('UPDATE users SET gender = ? WHERE user_id = ?', [validatedGender, userId], async err => {
             if (err) {
-                await logError('Ошибка при обновлении пола:', err);
+                await logError(`Ошибка при обновлении пола: ${err}`);
                 // Сообщение пользователю о возникшей ошибке
                 await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
             }
         });
     } else {
-        await logError('Некорректное значение пола:', genderInput);
+        await logError(`Некорректное значение пола: ${genderInput}`);
         // Здесь можно отправить сообщение пользователю о некорректном вводе
     }
 }
@@ -310,7 +310,6 @@ async function validateAndGetChooseWeight(chooseWeightInput) {
 }
 
 // Функция для сохранения или обновления пола пользователя
-async function updateChooseWeightDatabase(userId, weightInput, newState = 'default') {
 async function updateChooseWeightDatabase(userId, chooseWeightInput) {
     const validatedChooseWeight = validateAndGetChooseWeight(chooseWeightInput);
 
@@ -448,8 +447,6 @@ async function askTarget(userId) {
     await bot.sendMessage(userId, 'Выберите цель питания:', targerKeyboard);
 }
 
-// Функция для сохранения или обновления цены выбранной пользователем
-async function updateTargetDatabase(userId, targetInput, newState = 'default') {
 // Функция для сохранения или обновления цели выбранной пользователем
 async function updateTargetDatabase(userId, targetInput) {
     db.run('UPDATE users SET target = ?, state = ? WHERE user_id = ?', [targetInput, 'calories', userId], async err => {
@@ -499,7 +496,7 @@ async function updateDeliveryDatabase(userId, targetInput) {
 // Функция для получения статуса пользователя
 async function getUserState(userID) {
     try {
-        // Асинхронно получаем статус пользователя из базы данных
+        // Используем Promise для обработки асинхронного запроса
         const row = await new Promise((resolve, reject) => {
             db.get('SELECT state FROM users WHERE user_id = ?', [userID], (err, row) => {
                 if (err) {
@@ -516,13 +513,11 @@ async function getUserState(userID) {
         // Возвращаем статус пользователя или null, если пользователь не найден
         return row ? row.state : null;
     } catch (err) {
-        // Логируем ошибку и перебрасываем её дальше
+        // Логирование ошибки и отправка уведомления пользователю (если это необходимо)
         await logError(`Ошибка при получении статуса пользователя: ${err}`);
-        // В зависимости от вашей логики работы с ботом, здесь может быть код для отправки сообщения пользователю
         throw err;
     }
 }
-
 
 // Получить гендер пользователя
 async function getGenderUser(userID) {
