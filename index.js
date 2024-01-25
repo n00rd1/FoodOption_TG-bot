@@ -6,8 +6,7 @@ require('dotenv').config();
 const {TELEGRAM_BOT_TOKEN, ADMIN_ID} = process.env, TelegramApi = require('node-telegram-bot-api'),
     bot = new TelegramApi(TELEGRAM_BOT_TOKEN, {polling: true});
 
-db.run(`CREATE TABLE IF NOT EXISTS users
-        (
+db.run(`CREATE TABLE IF NOT EXISTS users (
             id                            INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id                       INTEGER UNIQUE,
             username                      TEXT,
@@ -63,9 +62,6 @@ await console.log(msg);
         if (text === '/start') {        // Приветственное сообщение
             await sayHello(chatID);
             return ;
-        } else if (text === '/reset') {   // Настройка БЖУ
-            await sayHello(chatID, true)
-            return;
         } else if (text === '/command') {
             return;
         }
@@ -155,6 +151,8 @@ async function sayHello(userId) {
 async function askMale(userId) {
     const genderKeyboard = {
         reply_markup: JSON.stringify({
+            one_time_keyboard: true,
+            resize_keyboard: true,
             keyboard: [
                 [
                     { text: '👔 Мужчина 👨' },
