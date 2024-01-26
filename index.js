@@ -185,9 +185,41 @@ async function askMiddle(userId) {
     await bot.sendMessage(userId, '📏 Укажите размер вашей талии (например, 90) 👖');
 }
 
-// Функция для валидации и сохранения обхвата талии
-async function updateMiddleDatabase(userId, middleInput, newState = 'default') {
+// Валидация введённых данных по замеру талии
+function validateMiddle(middleInput) {
+    // Предполагаем, что middleInput - это числовое значение в см
+    const middle = parseInt(middleInput);
+    if (isNaN(middle) || middle < 40 || middle > 150) {
+        return null; // Валидация не пройдена
+    }
+    return middle; // Валидация пройдена
+}
 
+// Функция для валидации и сохранения обхвата талии
+async function updateMiddleDatabase(userId, middleInput, state) {
+    let newState = (state !== 'start_middle' ? 'default' : 'start_height');
+    const validatedMiddle = validateMiddle(middleInput);
+
+    if (validatedMiddle === null) {
+        await bot.sendMessage(userId, 'Введены некорректные данные. Укажите размер талии в диапазоне, соответствующем возрасту от 14 до 60 лет.');
+        return;
+    }
+
+    try {
+        await new Promise((resolve, reject) => {
+            db.run('UPDATE users SET middle = ?, state = ? WHERE user_id = ?', [validatedMiddle, newState, userId], (err) => {
+                if (err) {
+                    logError(`Ошибка при обновлении обхвата талии: ${err}`).then(() => {
+                        reject(err);
+                    });
+                    return;
+                }
+                resolve();
+            });
+        });
+    } catch (err) {
+        await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+    }
 }
 /*********************************************************
  *****    *****            РОСТ              *****   *****
@@ -197,8 +229,41 @@ async function askHeight(userId) {
     await bot.sendMessage(userId, '📏 Укажите ваш рост (например, 185) 👤');
 }
 
-async function updateHeightDatabase(userId, heightInput, newState = 'default') {
+// Валидация введённого роста пользователя
+function validateHeight(heightInput) {
+    // Предполагаем, что heightInput - это числовое значение в см
+    const height = parseInt(heightInput);
+    if (isNaN(height) || height < 100 || height > 250) {
+        return null; // Валидация не пройдена
+    }
+    return height; // Валидация пройдена
+}
 
+// Функция для валидации и обновления роста пользователя
+async function updateHeightDatabase(userId, heightInput, state) {
+    let newState = (state !== 'start_height' ? 'default' : 'start_format');
+    const validatedHeight = validateHeight(heightInput);
+
+    if (validatedHeight === null) {
+        await bot.sendMessage(userId, 'Введены некорректные данные. Укажите ваш рост в диапазоне от 100 до 250 см.');
+        return;
+    }
+
+    try {
+        await new Promise((resolve, reject) => {
+            db.run('UPDATE users SET height = ?, state = ? WHERE user_id = ?', [validatedHeight, newState, userId], (err) => {
+                if (err) {
+                    logError(`Ошибка при обновлении роста: ${err}`).then(() => {
+                        reject(err);
+                    });
+                    return;
+                }
+                resolve();
+            });
+        });
+    } catch (err) {
+        await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+    }
 }
 /*********************************************************
  *****    *****  ВЫБОР ИЗ ВАРИАНТОВ ПИТАНИЯ  *****   *****
@@ -216,7 +281,6 @@ async function askFormat(userId) {
             ]
         })
     };
-
     await bot.sendMessage(userId, 'Выберите формат питания:', genderKeyboard);
 }
 
@@ -355,11 +419,45 @@ async function askWeight(userId) {
     await bot.sendMessage(userId, '📊 Введите ваш вес (например, 88,5) 🏋️‍♂️:');
 }
 
-// Функция для сохранения или обновления веса пользователя
-async function updateWeightDatabase(userId, weightInput, newState = 'default') {
+// Валидация введённого значения пользователем
+function validateWeight(weightInput) {
+    // Преобразовываем ввод, заменяя запятые на точки и удаляя лишние символы
+    const normalizedInput = weightInput.replace(',', '.').replace(/[^0-9.]/g, '');
+    const weight = parseFloat(normalizedInput);
 
+    // Проверяем, что преобразованное значение является числом и находится в допустимых пределах
+    if (isNaN(weight) || weight < 30 || weight > 200) {
+        return null; // Валидация не пройдена
+    }
+    return weight; // Валидация пройдена
 }
 
+// Функция для сохранения или обновления веса пользователя
+async function updateWeightDatabase(userId, weightInput, state) {
+    let newState = (state !== 'start_weight' ? 'default' : 'start_fat');
+    const validatedWeight = validateWeight(weightInput);
+
+    if (validatedWeight === null) {
+        await bot.sendMessage(userId, 'Введены некорректные данные. Укажите ваш вес в диапазоне от 30 до 200 кг.');
+        return;
+    }
+
+    try {
+        await new Promise((resolve, reject) => {
+            db.run('UPDATE users SET weight = ?, state = ? WHERE user_id = ?', [validatedWeight, newState, userId], (err) => {
+                if (err) {
+                    logError(`Ошибка при обновлении веса: ${err}`).then(() => {
+                        reject(err);
+                    });
+                    return;
+                }
+                resolve();
+            });
+        });
+    } catch (err) {
+        await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+    }
+}
 /*********************************************************
  *****    *****             ЖИР              *****   *****
  *********************************************************/
@@ -367,9 +465,42 @@ async function askFat(userId) {
     await bot.sendMessage(userId, '💪 Введите процент вашего жира (например, 0,25) 📉:');
 }
 
-// Функция для сохранения или обновления пола пользователя
-async function updateFatDatabase(userId, fatInput, newState = 'default') {
+// Валидация введённого процента пользователя
+function validateFat(fatInput) {
+    const normalizedInput = fatInput.replace(',', '.').replace(/[^0-9.]/g, '');
+    const fatPercentage = parseFloat(normalizedInput);
 
+    if (isNaN(fatPercentage) || fatPercentage < 0 || fatPercentage > 1) {
+        return null;
+    }
+    return fatPercentage;
+}
+
+// Функция для сохранения или обновления процента жира пользователя
+async function updateFatDatabase(userId, fatInput, state) {
+    const validatedFat = validateFat(fatInput);
+    let newState = (state !== 'start_fat' ? 'default' : 'start_activity');
+
+    if (validatedFat === null) {
+        await bot.sendMessage(userId, 'Введены некорректные данные. Укажите процент жира в правильном формате (например, 0.25).');
+        return;
+    }
+
+    try {
+        await new Promise((resolve, reject) => {
+            db.run('UPDATE users SET fat = ?, state = ? WHERE user_id = ?', [validatedFat, newState, userId], (err) => {
+                if (err) {
+                    logError(`Ошибка при обновлении процента жира: ${err}`).then(() => {
+                        reject(err);
+                    });
+                    return;
+                }
+                resolve();
+            });
+        });
+    } catch (err) {
+        await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+    }
 }
 /*********************************************************
  *****    *****          АКТИВНОСТЬ          *****   *****
@@ -499,13 +630,30 @@ async function findCaloriesDatabase(userId, state) {
 }
 
 // Функция для сохранения или обновления цели выбранной пользователем
-async function updateDeliveryDatabase(userId, targetInput) {
-    db.run('UPDATE users SET delivery = ?, state = ? WHERE user_id = ?', [targetInput, 'calories', userId], async err => {
-        if (err) {
-            await logError(`Ошибка при обновлении формата питания: ${err}`);
-            await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
-        }
-    });
+async function updateDeliveryDatabase(userId, deliveryInput) {
+    const validatedDelivery = (deliveryInput === '🌅☕ Утро (7-9) 🍳' ? 'Утро':'Вечер';
+
+
+    if (validatedDelivery === null) {
+        await bot.sendMessage(userId, 'Введены некорректные данные. Пожалуйста, выберите корректное время доставки.');
+        return;
+    }
+
+    try {
+        await new Promise((resolve, reject) => {
+            db.run('UPDATE users SET delivery = ?, state = ? WHERE user_id = ?', [validatedDelivery, 'calories', userId], (err) => {
+                if (err) {
+                    logError(`Ошибка при обновлении времени доставки: ${err}`).then(() => {
+                        reject(err);
+                    });
+                    return;
+                }
+                resolve();
+            });
+        });
+    } catch (err) {
+        await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+    }
 }*/
 /*********************************************************
  *****    *****            ПРОЧЕЕ            *****   *****
