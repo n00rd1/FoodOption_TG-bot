@@ -2,7 +2,6 @@ const sqlite3 = require('sqlite3').verbose();
 const db = new sqlite3.Database('users.db');
 const fs = require('fs').promises;
 require('dotenv').config();
-// Приветственное сообщение в боте
 const {TELEGRAM_BOT_TOKEN, ADMIN_ID} = process.env, TelegramApi = require('node-telegram-bot-api'),
     bot = new TelegramApi(TELEGRAM_BOT_TOKEN, {polling: true});
 
@@ -190,8 +189,7 @@ async function askMiddle(userId) {
 }
 
 // Валидация введённых данных по замеру талии
-function validateMiddle(middleInput) {
-    // Предполагаем, что middleInput - это числовое значение в см
+async function validateMiddle(middleInput) {
     const middle = parseInt(middleInput);
     if (isNaN(middle) || middle < 40 || middle > 150) {
         return null; // Валидация не пройдена
@@ -202,10 +200,10 @@ function validateMiddle(middleInput) {
 // Функция для валидации и сохранения обхвата талии
 async function updateMiddleDatabase(userId, middleInput, state) {
     let newState = (state !== 'start_middle' ? 'default' : 'start_height');
-    const validatedMiddle = validateMiddle(middleInput);
+    const validatedMiddle = await validateMiddle(middleInput);
 
     if (validatedMiddle === null) {
-        await bot.sendMessage(userId, 'Введены некорректные данные. Укажите размер талии в диапазоне, соответствующем возрасту от 14 до 60 лет.');
+        await bot.sendMessage(userId, 'Введены некорректные данные.');
         return;
     }
 
@@ -290,7 +288,7 @@ async function askFormat(userId) {
 
 // Функция для сохранения или обновления варианта питания пользователя
 async function updateFormatDatabase(userId, formatInput) {
-    const validatedFormat = (formatInput === '👥🌍 Общий 🔄📢' ? 'общ' : 'индив');
+    const validatedFormat = (formatInput === '👥🌍 Общий 🔄📢' ? 'общий' : 'индив');
     let newState = (validatedFormat === 'индив' ? 'start_weight' : 'start_choose_weight');
 
     try {
@@ -745,13 +743,13 @@ function getStateOrder(currentState, currentFormat) {
             if (currentIndex !== -1 && currentIndex !== allStatesStart.length - 1) { // Если текущее состояние входит в начальное
                 newState = allStatesStart[currentIndex + 1];
             } else if (currentIndex === allStatesStart.length - 1) { // Если текущее состояние входит в начальное и оно последнее
-                if (currentFormat === "общ") { // Если текущей формат - общий
+                if (currentFormat === "общий") { // Если текущей формат - общий
                     newState = allStatesDefaultStart[0];
                 } else if (currentFormat === "индив") { // Если текущей формат - индивидуальный
                     newState = allStatesIndividualStart[0]
                 }
             } else {
-                if (currentFormat === "общ") {
+                if (currentFormat === "общий") {
                     currentIndex = allStatesDefaultStart.indexOf(currentState);
                     if (currentIndex !== -1 && currentIndex !== allStatesDefaultStart.length - 1) { // Если текущее состояние входит в общее
                         newState = allStatesDefaultStart[currentIndex + 1];
@@ -901,7 +899,7 @@ async function forwardAdmin(msg) {
 
 // Обработчик ошибок базы данных
 db.on('error', async err => {
-    await notifyAdmin(ADMIN_ID, '', 'База данных поела говна');
+    await notifyAdmin(ADMIN_ID, '', `База данных поела говна; ${err}`);
     await logError(`Ошибка базы данных: ${err}`);
 });
 
