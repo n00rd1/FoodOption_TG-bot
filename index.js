@@ -173,12 +173,21 @@ async function updateGenderDatabase(userId, genderInput, state) {
     let newState = (state !== 'start_gender' ? 'default' : 'start_middle');
     const validatedGender = (genderInput === '👔 Мужчина 👨' ? 'М' : 'Ж');
 
-    db.run('UPDATE users SET gender = ?, state = ? WHERE user_id = ?', [validatedGender, newState, userId], async err => {
-        if (err) {
-            await logError(`Ошибка при обновлении пола: ${err}`);
-            await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
-        }
-    });
+    try {
+        await new Promise((resolve, reject) => {
+            db.run('UPDATE users SET gender = ?, state = ? WHERE user_id = ?', [validatedGender, newState, userId], (err) => {
+                if (err) {
+                    logError(`Ошибка при обновлении пола: ${err}`).then(() => {
+                        reject(err);
+                    });
+                    return;
+                }
+                resolve();
+            });
+        });
+    } catch (err) {
+        await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+    }
 }
 
 /*********************************************************
@@ -233,7 +242,6 @@ async function askHeight(userId) {
 
 // Валидация введённого роста пользователя
 function validateHeight(heightInput) {
-    // Предполагаем, что heightInput - это числовое значение в см
     const height = parseInt(heightInput);
     if (isNaN(height) || height < 100 || height > 250) {
         return null; // Валидация не пройдена
@@ -343,14 +351,14 @@ async function askChooseWeight(userId) {
 // Функция для валидации и получения значения коэффициента активности
 async function validateAndGetChooseWeight(chooseWeightInput) {
     const chooseWeight = {
-        '55-60 🥦': 55,
-        '65-70 🍇': 65,
-        '75-80 🍏': 75,
-        '85-90 🍊': 85,
-        '95-100 🍖': 95,
-        '105-110 🍰': 105,
-        '115-120 🍕': 115,
-        '125-130 🍔': 125
+        '55-60 🥦': '55-60',
+        '65-70 🍇': '65-70',
+        '75-80 🍏': '75-80',
+        '85-90 🍊': '85-90',
+        '95-100 🍖': '95-100',
+        '105-110 🍰': '105-110',
+        '115-120 🍕': '115-120',
+        '125-130 🍔': '125-130'
     };
 
     return chooseWeight[chooseWeightInput] || null;
@@ -358,11 +366,16 @@ async function validateAndGetChooseWeight(chooseWeightInput) {
 
 // Функция для сохранения или обновления пола пользователя
 async function updateChooseWeightDatabase(userId, chooseWeightInput) {
-    const validatedChooseWeight = validateAndGetChooseWeight(chooseWeightInput);
+    const validatedChooseWeight = await validateAndGetChooseWeight(chooseWeightInput);
+
+    if (!validatedChooseWeight) {
+        await bot.sendMessage(userId, 'Некорректный выбор веса. Пожалуйста, попробуйте снова.');
+        return;
+    }
 
     try {
         await new Promise((resolve, reject) => {
-            db.run('UPDATE users SET weight = ?, state = ? WHERE user_id = ?', [validatedChooseWeight, 'start_price', userId], (err) => {
+            db.run('UPDATE users SET choose_weight = ?, state = ? WHERE user_id = ?', [validatedChooseWeight, 'start_price', userId], (err) => {
                 if (err) {
                     logError(`Ошибка при обновлении веса: ${err}`).then(() => {
                         reject(err);
@@ -381,38 +394,264 @@ async function updateChooseWeightDatabase(userId, chooseWeightInput) {
  *****    *****    ВЫБОР ИЗ ВАРИАНТОВ ЦЕНЫ   *****   *****
  *********************************************************/
 async function askChoosePrice(userId) {
+    const gender = await getGenderUser(userId);
+    const choose_weight = await getWeightUser(userId);
+    const price = await findPrice(gender, choose_weight);
+
     const choosePriceKeyboard = {
         reply_markup: JSON.stringify({
             one_time_keyboard: true,
             resize_keyboard: true,
             keyboard: [
-                { text: '🥦'},
-                { text: '🍔'}
+                [
+                    { text: '🗓️ 6 дней ✨'},
+                    { text: '🗓️ 12 дней 🌟'}
+                ],
+                [
+                    { text: '🗓️ 24 дней 💫'},
+                    { text: '🗓️ 30 дней 🔥'}
+                ]
             ]
         })
     };
+
+    const text = `Для веса ${price['weight']} кг и суточной потребности в ${price['ccal']} ккал, ваш персонализированный план питания на разные сроки выглядит следующим образом:\n` +
+        `\n` +
+        `📅 На 6 дней: ваша инвестиция составит ${price['6_day']} ₸ (один день — ${price['1_day']} ₸). 💸🌟\n` +
+        `📅 На 12 дней: полная стоимость будет ${price['12_day']} ₸, в то время как без скидки цена достигла бы ${price['12_day_no_sale']} ₸. 💸✂️\n` +
+        `📅 На 24 дней: план обойдется в ${price['24_day']} ₸, со скидкой от первоначальных ${price['24_day_no_sale']} ₸. 💸🏷️` +
+        `📅 На 30 дней: программа предлагается за ${price['30_day']} ₸, что меньше стандартной цены в ${price['30_day_no_sale']} ₸. 💸🎉\n` +
+        `💪🥑 Выберите оптимальный для себя вариант и начните свой путь к здоровью и хорошему самочувствию сегодня! 🍽️✨`
 
     await bot.sendMessage(userId, 'Выберите пакет с ценой:', choosePriceKeyboard);
 }
 
 // Функция для валидации цены
-async function validateAndGetChoosePrice(choosePriceInput) {
-    const choosePrice = {
-        'X': 1,
-        'Y': 2
-    };
-
-    return choosePrice[choosePriceInput] || null;
+async function findPrice(gender, choose_weight) {
+    const manPrice = [
+        {
+            "weight": "125-130",
+            "ccal": "2400-2500",
+            "1_day": 6500,
+            "6_day": 39000,
+            "12_day": 74100,
+            "12_day_no_sale": 78000,
+            "24_day": 140400,
+            "24_day_no_sale": 156000,
+            "30_day": 171600,
+            "30_day_no_sale": 195000
+        },
+        {
+            "weight": "115-120",
+            "ccal": "2200-2300",
+            "1_day": 6300,
+            "6_day": 37800,
+            "12_day": 71820,
+            "12_day_no_sale": 75000,
+            "24_day": 136080,
+            "24_day_no_sale": 151200,
+            "30_day": 166320,
+            "30_day_no_sale": 189000
+        },
+        {
+            "weight": "105-110",
+            "ccal": "2000-2100",
+            "1_day": 6100,
+            "6_day": 36600,
+            "12_day": 69540,
+            "12_day_no_sale": 73000,
+            "24_day": 131760,
+            "24_day_no_sale": 146400,
+            "30_day": 161040,
+            "30_day_no_sale": 183000
+        },
+        {
+            "weight": "95-100",
+            "ccal": "1800-1900",
+            "1_day": 5900,
+            "6_day": 35400,
+            "12_day": 67260,
+            "12_day_no_sale": 70800,
+            "24_day": 127440,
+            "24_day_no_sale": 141600,
+            "30_day": 155760,
+            "30_day_no_sale": 177000
+        },
+        {
+            "weight": "85-90",
+            "ccal": "1650-1750",
+            "1_day": 5700,
+            "6_day": 34200,
+            "12_day": 64980,
+            "12_day_no_sale": 68400,
+            "24_day": 123120,
+            "24_day_no_sale": 136800,
+            "30_day": 150480,
+            "30_day_no_sale": 171000
+        },
+        {
+            "weight": "75-80",
+            "ccal": "1600-1700",
+            "1_day": 5500,
+            "6_day": 33000,
+            "12_day": 62700,
+            "12_day_no_sale": 66000,
+            "24_day": 118800,
+            "24_day_no_sale": 132000,
+            "30_day": 145200,
+            "30_day_no_sale": 165000
+        }
+    ];
+    const womanPrice = [
+        {
+            "weight": "125-130",
+            "ccal": "2050-2100",
+            "1_day": 6000,
+            "6_day": 36000,
+            "12_day": 68400,
+            "12_day_no_sale": 72000,
+            "24_day": 129600,
+            "24_day_no_sale": 144000,
+            "30_day": 158400,
+            "30_day_no_sale": 180000
+        },
+        {
+            "weight": "115-120",
+            "ccal": "1900-1950",
+            "1_day": 5800,
+            "6_day": 34800,
+            "12_day": 66120,
+            "12_day_no_sale": 69600,
+            "24_day": 125280,
+            "24_day_no_sale": 139200,
+            "30_day": 153120,
+            "30_day_no_sale": 174000
+        },
+        {
+            "weight": "105-110",
+            "ccal": "1810-1850",
+            "1_day": 5600,
+            "6_day": 33600,
+            "12_day": 63840,
+            "12_day_no_sale": 67200,
+            "24_day": 120960,
+            "24_day_no_sale": 134400,
+            "30_day": 147840,
+            "30_day_no_sale": 168000
+        },
+        {
+            "weight": "95-100",
+            "ccal": "1710-1750",
+            "1_day": 5400,
+            "6_day": 32400,
+            "12_day": 61560,
+            "12_day_no_sale": 64800,
+            "24_day": 116640,
+            "24_day_no_sale": 129600,
+            "30_day": 142560,
+            "30_day_no_sale": 162000
+        },
+        {
+            "weight": "85-90",
+            "ccal": "1610-1650",
+            "1_day": 5200,
+            "6_day": 31200,
+            "12_day": 59280,
+            "12_day_no_sale": 62400,
+            "24_day": 112320,
+            "24_day_no_sale": 124800,
+            "30_day": 137280,
+            "30_day_no_sale": 156000
+        },
+        {
+            "weight": "75-80",
+            "ccal": "1510-1550",
+            "1_day": 5000,
+            "6_day": 30000,
+            "12_day": 57000,
+            "12_day_no_sale": 60000,
+            "24_day": 108000,
+            "24_day_no_sale": 120000,
+            "30_day": 132000,
+            "30_day_no_sale": 150000
+        },
+        {
+            "weight": "65-70",
+            "ccal": "1310-1350",
+            "1_day": 4900,
+            "6_day": 29400,
+            "12_day": 55860,
+            "12_day_no_sale": 58800,
+            "24_day": 105840,
+            "24_day_no_sale": 117600,
+            "30_day": 129360,
+            "30_day_no_sale": 147000
+        },
+        {
+            "weight": "55-60",
+            "ccal": "1150-1200",
+            "1_day": 4800,
+            "6_day": 28800,
+            "12_day": 51840,
+            "12_day_no_sale": 57600,
+            "24_day": 103680,
+            "24_day_no_sale": 115200,
+            "30_day": 126720,
+            "30_day_no_sale": 144000
+        }
+    ];
+    // Возвращаем таблицу в зависимости от пола
+    const prices = gender === 'М' ? manPrice : womanPrice;
+    return prices.find(price => price.weight === choose_weight);
 }
 
 // Функция для сохранения или обновления цены выбранной пользователем
 async function updateChoosePriceDatabase(userId, choosePriceInput, state) {
-    const newActivityCoefficient = validateAndGetChoosePrice(choosePriceInput);
-    let newState = (state === 'start_choose_price' ? 'delivery' : 'default');
+    const newState = (state !== 'start_choose_price' ? 'default' : 'delivery');
+    const gender = await getGenderUser(userId);
+    const choose_weight = await getWeightUser(userId);
+    const price = await findPrice(gender, choose_weight);
+    let priceChoose = 0;
+    let dayChoose = '';
 
-    // Обработка ошибок, возникших при обновлении веса
-    await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+    switch (choosePriceInput) {
+        case '🗓️ 6 дней ✨':
+            priceChoose = price['6_day'];
+            dayChoose = '6 дней';
+            break;
+        case '🗓️ 12 дней 🌟':
+            priceChoose = price['12_day'];
+            dayChoose = '12 дней';
+            break;
+        case '🗓️ 24 дней 💫':
+            priceChoose = price['24_day'];
+            dayChoose = '24 дней';
+            break;
+        case '🗓️ 30 дней 🔥':
+            priceChoose = price['30_day'];
+            dayChoose = '30 дней';
+            break;
+        default:
+            await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+            return;
+    }
 
+    try {
+        await new Promise((resolve, reject) => {
+            db.run('UPDATE users SET choose_price = ?, choose_per_days = ?, state = ? WHERE user_id = ?', [priceChoose, dayChoose, 'start_price', userId], (err) => {
+                if (err) {
+                    logError(`Ошибка при указании параметров: ${err}`).then(() => {
+                        reject(err);
+                    });
+                    return;
+                }
+                resolve();
+            });
+        });
+    } catch (err) {
+        // Обработка ошибок, возникших при обновлении веса
+        await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+    }
 }
 /*********************************************************
  *****    *****              ВЕС             *****   *****
@@ -705,6 +944,29 @@ async function getGenderUser(userID) {
     } catch (err) {
         // Обработка и логирование ошибок
         await logError(`Ошибка при получении пола пользователя для user_id ${userID}: ${err}`);
+        throw err; // Перебрасываем ошибку дальше
+    }
+}
+
+// Получить вес пользователя
+async function getWeightUser(userID) {
+    try {
+        const row = await new Promise((resolve, reject) => {
+            db.get('SELECT choose_weight FROM users WHERE user_id = ?', [userID], (err, row) => {
+                if (err) {
+                    logError(`Ошибка при получении веса пользователя: ${err}`);
+                    reject(err);
+                    return;
+                }
+                resolve(row);
+            });
+        });
+
+        // Возвращаем вес пользователя или null, если пользователь не найден
+        return row ? row.weight : null;
+    } catch (err) {
+        // Обработка и логирование ошибок
+        await logError(`Ошибка при получении веса пользователя для user_id ${userID}: ${err}`);
         throw err; // Перебрасываем ошибку дальше
     }
 }
