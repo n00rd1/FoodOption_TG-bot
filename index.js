@@ -11,16 +11,20 @@ db.run(`CREATE TABLE IF NOT EXISTS users (
             user_id                       INTEGER UNIQUE,
             username                      TEXT,
             phone                         TEXT,
-            gender                        TEXT DEFAULT 'М',
+            gender                        TEXT DEFAULT 'М' CHECK(gender IN ('М', 'Ж')),
             height                        REAL DEFAULT 0,
             middle                        REAL DEFAULT 0,
-            format                        TEXT DEFAULT 'общий',
+            format                        TEXT DEFAULT 'общий' CHECK(format IN ('индив', 'общий')),
+            choose_weight                 TEXT,
+            choose_price                  TEXT,
+            choose_per_days               TEXT,
             weight                        REAL DEFAULT 0,
             fat                           REAL DEFAULT 0,
-            activity                      REAL DEFAULT 0,
-            target                        TEXT DEFAULT 'похудеть',
+            activity                      REAL DEFAULT 0 CHECK(activity IN (1.2, 1.38, 1.46, 1.55, 1.64, 1.73, 1.9)),
+            target                        TEXT DEFAULT 'похудеть' CHECK(target IN ('похудеть', 'потолстеть')),
             state                         TEXT DEFAULT 'start_gender',
-            calories                      REAL DEFAULT 0
+            calories                      REAL DEFAULT 0,
+            registration_date             DATETIME DEFAULT CURRENT_TIMESTAMP
         );`);
 
 bot.on('contact', async (msg) => { // Реакция на отправку контакта
