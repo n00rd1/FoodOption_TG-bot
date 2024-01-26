@@ -19,10 +19,11 @@ db.run(`CREATE TABLE IF NOT EXISTS users (
             choose_per_days               TEXT,
             weight                        REAL DEFAULT 0,
             fat                           REAL DEFAULT 0,
-            activity                      REAL DEFAULT 0 CHECK(activity IN (1.2, 1.38, 1.46, 1.55, 1.64, 1.73, 1.9)),
+            activity                      REAL DEFAULT 1.2 CHECK(activity IN (1.2, 1.38, 1.46, 1.55, 1.64, 1.73, 1.9)),
             target                        TEXT DEFAULT 'похудеть' CHECK(target IN ('похудеть', 'потолстеть')),
             state                         TEXT DEFAULT 'start_gender',
             calories                      REAL DEFAULT 0,
+            delivery                      TEXT CHECK(delivery IN ('утро','вечер')),
             registration_date             DATETIME DEFAULT CURRENT_TIMESTAMP
         );`);
 
@@ -88,17 +89,17 @@ await console.log(msg);
             text === '👥🌍 Общий 🔄📢' ? await askChooseWeight(chatID) : await askWeight(chatID);
             break;
 
-        case 'start_target':
-        case 'target':
-            await updateTargetDatabase(chatID, text);
-            if (state === 'start_target')
-                await findCaloriesDatabase(chatID, state);
-            break;
-
         case 'start_choose_weight':
         case 'choose_weight':
             await updateChooseWeightDatabase(chatID, text);
             await askChoosePrice(chatID);
+            break;
+
+        case 'start_choose_price':
+        case 'choose_price':
+            await updateChoosePriceDatabase(chatID, text, state);
+            if (state === 'start_choose_price')
+                await askDelivery(chatID);
             break;
 
         case 'start_activity':
@@ -108,11 +109,11 @@ await console.log(msg);
                 await askTarget(chatID);
             break;
 
-        case 'start_choose_price':
-        case 'choose_price':
-            await updateChoosePriceDatabase(chatID, text, state);
-            if (state === 'start_choose_price')
-                await askDelivery(chatID);
+        case 'start_target':
+        case 'target':
+            await updateTargetDatabase(chatID, text);
+            if (state === 'start_target')
+                await findCaloriesDatabase(chatID, state);
             break;
 
         default:
@@ -855,7 +856,7 @@ async function findCaloriesDatabase(userId, state) {
 /*********************************************************
  *****    *****           Доставка            *****   *****
  *********************************************************/
-/*async function askDelivery(userId) {
+async function askDelivery(userId) {
     const deliveryKeyboard = {
         reply_markup: JSON.stringify({
             one_time_keyboard: true,
@@ -872,7 +873,7 @@ async function findCaloriesDatabase(userId, state) {
 
 // Функция для сохранения или обновления цели выбранной пользователем
 async function updateDeliveryDatabase(userId, deliveryInput) {
-    const validatedDelivery = (deliveryInput === '🌅☕ Утро (7-9) 🍳' ? 'Утро':'Вечер';
+    const validatedDelivery = (deliveryInput === '🌅☕ Утро (7-9) 🍳' ? 'Утро':'Вечер');
 
 
     if (validatedDelivery === null) {
@@ -895,7 +896,7 @@ async function updateDeliveryDatabase(userId, deliveryInput) {
     } catch (err) {
         await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
     }
-}*/
+}
 /*********************************************************
  *****    *****            ПРОЧЕЕ            *****   *****
  *********************************************************/
