@@ -869,36 +869,40 @@ async function findCaloriesDatabase(userId, state) {
             // Проверяем, что все данные присутствуют и корректны
             if (weight && fat && activity) {
                 // Вычисляем базовую калорийную норму
-                const leanBodyMass = weight - (weight * fat / 100);
-                let calories = ((weight - leanBodyMass) * 23) * activity;
+                let fatOnKg = weight * fat;
+                let BMT = weight - fatOnKg;
+                let BOO =  BMT * 23;
+                let activCcal = BOO * activity;
 
                 // Корректируем калорийность в зависимости от целей пользователя
                 let targetCcal = ((target === 'Похудеть') ? (-300) : (300));
 
                 let dayProtein = 2.42 * BMT;
-                let dayProteinCcal = dayProtein / 4;
+                let dayProteinCcal = dayProtein * 4;
 
                 let dayFat = 0.7 * BMT;
                 let dayFatCcal = dayFat * 9;
 
                 let dayCarbohydratesCcal = (activCcal + targetCcal) - dayProteinCcal - dayFatCcal;
-                let dayCarbohydrates = ((dayCarbohydratesCcal) / 4) / BMT;
+                let dayCarbohydrates = (dayCarbohydratesCcal) / 4;
+                let dayPerKgCarbohy = dayCarbohydrates / BMT;
 
                 let normalCcal = activCcal * 7;
                 let factCcal = normalCcal + (targetCcal * 7);
                 let deficit = normalCcal - factCcal;
                 let fatCycle = deficit / 7.716;
 
-                let message = `При весе в ${weight} и проценте жира ${(fat * 100)} при цели ${target}.\n\n` +
-                `Получается, что масса жира = ${fatOnKg}\n`+
-                `БМТ (Базовый метаболический темп) = ${BMT}\n` +
-                `ВОО (Величина Общего Обмена) = ${BOO}\n` +
-                `В таком случае стандартный объём калорий = ${activCcal}\n\n` +
-                `А индивидуальные показатели БЖУ получаются следующим образом:\n` +
-                `Белков на КГ должно быть 2.42 г/кг, т.е. ${dayProtein} г и ${dayProteinCcal} Ккал.\n` +
-                `Жиров на КГ должно быть 0.7 г/кг, т.е. ${dayFat} г и ${dayFatCcal} Ккал.\n` +
-                `Углеводов на КГ должно быть 2.905 г/кг, т.е. ${dayCarbohydrates} г и ${dayCarbohydratesCcal} Ккал.\n\n` +
-                `Итого по калориям получается, что норма - ${normalCcal}, а фактически - ${factCcal}, т.е. ${targetCcal} составляет ${deficit}, а жир/кг (за цикл) = ${fatCycle}`;
+                // Формируем сообщение 📝
+                let message = `При весе в ${weight}кг и проценте жира ${(fat * 100).toFixed(2)}% при цели ${target}.\n\n` +
+                    `Получается, что масса жира = ${fatOnKg.toFixed(1)} 😱\n`+
+                    `БМТ (Базовый метаболический темп) = ${BMT.toFixed(1)} 🔥\n` +
+                    `ВОО (Величина Общего Обмена) = ${BOO.toFixed(1)} 💪\n` +
+                    `В таком случае стандартный объём калорий = ${activCcal.toFixed(1)} 🍏\n\n` +
+                    `А индивидуальные показатели БЖУ получаются следующим образом:\n` +
+                    `Белков на КГ должно быть 2.42 г/кг, т.е. ${dayProtein.toFixed(1)} г и ${dayProteinCcal.toFixed(1)} Ккал. 🥚\n` +
+                    `Жиров на КГ должно быть 0.7 г/кг, т.е. ${dayFat.toFixed(1)} г и ${dayFatCcal.toFixed(1)} Ккал. 🧈\n` +
+                    `Углеводов на КГ должно быть ${(dayCarbohydratesCcal).toFixed(2)} г/кг, т.е. ${(dayCarbohydrates * 7)} г и ${dayCarbohydratesCcal.toFixed(2)} Ккал. 🍞\n\n` +
+                    `Итого по калориям получается, что норма - ${normalCcal.toFixed(2)}, а фактически - ${factCcal.toFixed(2)}, т.е. ${targetCcal} составляет ${deficit.toFixed(2)}, а жир/кг (за цикл) = ${fatCycle.toFixed(2)} 🚴‍♂️`;
 
                 await bot.sendMessage(userId, message);
 
