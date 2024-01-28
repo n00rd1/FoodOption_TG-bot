@@ -829,9 +829,10 @@ async function askTarget(userId) {
 
 // Функция для сохранения или обновления цели выбранной пользователем
 async function updateTargetDatabase(userId, targetInput) {
+    const target = ((targetInput === '🍔🛋️ Потолстеть 🍰') ? 'Потолстеть' : 'Похудеть');
     try {
         await new Promise((resolve, reject) => {
-            db.run('UPDATE users SET target = ?, state = ? WHERE user_id = ?', [targetInput, 'calories', userId], (err) => {
+            db.run('UPDATE users SET target = ?, state = ? WHERE user_id = ?', [target, 'calories', userId], (err) => {
                 if (err) {
                     logError(`Ошибка при обновлении цели: ${err}`).then(() => {
                         reject(err);
@@ -868,29 +869,29 @@ async function findCaloriesDatabase(userId, state) {
 
             // Проверяем, что все данные присутствуют и корректны
             if (weight && fat && activity) {
-                // Вычисляем базовую калорийную норму
+                // Инициализация и расчет основных параметров
                 let fatOnKg = weight * fat;
-                let BMT = weight - fatOnKg;
-                let BOO =  BMT * 23;
-                let activCcal = BOO * activity;
+                let BMT = weight - fatOnKg; // Базовая масса тела
+                let BOO = BMT * 23; // Базовый обмен веществ
+                let activCcal = BOO * activity; // Активность
 
-                // Корректируем калорийность в зависимости от целей пользователя
-                let targetCcal = ((target === 'Похудеть') ? (-300) : (300));
+                // Корректировка калорийности в зависимости от цели
+                let targetCcal = target === 'Похудеть' ? -300 : 300;
 
+                // Расчет БЖУ
                 let dayProtein = 2.42 * BMT;
                 let dayProteinCcal = dayProtein * 4;
-
                 let dayFat = 0.7 * BMT;
                 let dayFatCcal = dayFat * 9;
+                let dayCarbohydratesCcal = activCcal + targetCcal - dayProteinCcal - dayFatCcal;
+                let dayCarbohydrates = dayCarbohydratesCcal / 4;
+                let dayPerKgCarbohy = dayCarbohydrates / BMT; // Углеводы на кг массы тела
 
-                let dayCarbohydratesCcal = (activCcal + targetCcal) - dayProteinCcal - dayFatCcal;
-                let dayCarbohydrates = (dayCarbohydratesCcal) / 4;
-                let dayPerKgCarbohy = dayCarbohydrates / BMT;
-
+                // Расчет калорийности
                 let normalCcal = activCcal * 7;
-                let factCcal = normalCcal + (targetCcal * 7);
-                let deficit = normalCcal - factCcal;
-                let fatCycle = deficit / 7.716;
+                let factCcal = normalCcal + targetCcal * 7;
+                let deficit = normalCcal - factCcal; // Дефицит калорий
+                let fatCycle = deficit / 7.716; // Жиры за цикл
 
                 // Формируем сообщение 📝
                 let message = `При весе в ${weight}кг и проценте жира ${(fat * 100).toFixed(2)}% при цели ${target}.\n\n` +
@@ -905,10 +906,6 @@ async function findCaloriesDatabase(userId, state) {
                     `Итого по калориям получается, что норма - ${normalCcal.toFixed(2)}, а фактически - ${factCcal.toFixed(2)}, т.е. ${targetCcal} составляет ${deficit.toFixed(2)}, а жир/кг (за цикл) = ${fatCycle.toFixed(2)} 🚴‍♂️`;
 
                 await bot.sendMessage(userId, message);
-
-//                const leanBodyMass = weight - (weight * fat / 100);
-//                let calories = ((weight - leanBodyMass) * 23) * activity;
-
                 const newState = (state !== 'start_target' ? 'default' : 'delivery');
 
                 // Обновляем поле calories в базе данных
