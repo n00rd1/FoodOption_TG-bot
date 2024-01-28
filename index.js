@@ -851,7 +851,50 @@ async function updateTargetDatabase(userId, targetInput) {
  *********************************************************/
 // Функция для просчёта, обновления и вывода
 async function findCaloriesDatabase(userId, state) {
+    try {
 
+        const row = await new Promise((resolve, reject) => {
+            db.get('SELECT weight, fat, activity, target FROM users WHERE user_id = ?', [userId], (err, row) => {
+                if (err) {
+                    logError(`Ошибка при получении данных пользователя: ${err}`).then(() => reject(err));
+                    return;
+                }
+                resolve(row);
+            });
+        });
+
+        if (row) {
+            const { weight, fat, activity, target } = row;
+
+            // Проверяем, что все данные присутствуют и корректны
+            if (weight && fat && activity) {
+                // Вычисляем базовую калорийную норму
+                const leanBodyMass = weight - (weight * fat / 100);
+                let calories = ((weight - leanBodyMass) * 23) * activity;
+
+                // Корректируем калорийность в зависимости от целей пользователя
+                ((target === 'Похудеть') ? (calories -= 300) : (calories += 300));
+
+                const newState = (state !== 'start_target' ? 'default' : 'delivery');
+
+                // Обновляем поле calories в базе данных
+                await new Promise((resolve, reject) => {
+                    db.run('UPDATE users SET calories = ?, state = ? WHERE user_id = ?', [calories, newState, userId], err => {
+                        if (err) {
+                            logError(`Ошибка при обновлении калорий в базе данных: ${err}`).then(() => reject(err));
+                            return;
+                        }
+                        resolve();
+                    });
+                });
+            } else {
+                await logError('Недостаточно данных для расчета калорий.');
+                await bot.sendMessage(userId, 'Недостаточно данных для расчёта калорий, пожалуйста, заполните все необходимые данные.');
+            }
+        }
+    } catch (err) {
+        await bot.sendMessage(userId, 'Произошла ошибка при расчете калорий. Пожалуйста, попробуйте позже.');
+    }
 }
 /*********************************************************
  *****    *****           Доставка            *****   *****
@@ -875,7 +918,6 @@ async function askDelivery(userId) {
 async function updateDeliveryDatabase(userId, deliveryInput) {
     const validatedDelivery = (deliveryInput === '🌅☕ Утро (7-9) 🍳' ? 'Утро':'Вечер');
 
-
     if (validatedDelivery === null) {
         await bot.sendMessage(userId, 'Введены некорректные данные. Пожалуйста, выберите корректное время доставки.');
         return;
@@ -883,7 +925,7 @@ async function updateDeliveryDatabase(userId, deliveryInput) {
 
     try {
         await new Promise((resolve, reject) => {
-            db.run('UPDATE users SET delivery = ?, state = ? WHERE user_id = ?', [validatedDelivery, 'calories', userId], (err) => {
+            db.run('UPDATE users SET delivery = ?, state = ? WHERE user_id = ?', [validatedDelivery, 'default', userId], (err) => {
                 if (err) {
                     logError(`Ошибка при обновлении времени доставки: ${err}`).then(() => {
                         reject(err);
@@ -1150,9 +1192,9 @@ async function updateStateInDatabase(userID, newState) {
  *********************************************************/
 // Функция для отправки сообщений администратору
 async function notifyAdmin(userId, username, text = 'Без текста') {
-//    if (ADMIN_ID !== userId) {
+    if (ADMIN_ID !== userId) {
         await bot.sendMessage(ADMIN_ID, `@${username || userId}: ${text}`);
-//    }
+    }
 }
 
 // Функция для пересылки сообщений администратору
