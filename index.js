@@ -66,96 +66,98 @@ await console.log(msg);
     if (msgType === 'bot_command') {
         if (text === '/start') {        // Приветственное сообщение
             await sayHello(chatID);
-            return ;
         } else if (text === '/cancel') {
-             return;
-        } else if (text === '/send') {
-            return;
-        } else if (text === '/command') {
-            return;
+            await unsubscribeFromNews(chatID);
+        } else if (text === '/info') {
+            await sendUserInfo(chatID);
+        } else if (text === '/text') {
+            await broadcastTextMessageWithUnsubscribe(text, chatID);
+        } else if (text === '/photo') {
+            await broadcastPhotoToAllUsers(msg, chatID);
         }
     } else {
-        // Пересылка информации админу
-        await notifyAdmin(ADMIN_ID, username, text);
-    }
+        let state = await getUserState(chatID);
+        switch (state) {
+            case 'send_adm':
+                await broadcastContentToAllUsers(text, chatID)
+                break;
 
-    let state = await getUserState(chatID);
-    switch (state) {
-        case 'start_gender':
-        case 'gender':
-            await updateGenderDatabase(chatID, text, state);
-            if (state === 'start_gender')
-                await askMiddle(chatID);
-            break;
+            case 'start_gender':
+            case 'gender':
+                await updateGenderDatabase(chatID, text, state);
+                if (state === 'start_gender')
+                    await askMiddle(chatID);
+                break;
 
-        case 'start_middle':
-        case 'middle':
-            await updateMiddleDatabase(chatID, text, state);
-            if (state === 'start_middle')
-                await askHeight(chatID);
-            break;
+            case 'start_middle':
+            case 'middle':
+                await updateMiddleDatabase(chatID, text, state);
+                if (state === 'start_middle')
+                    await askHeight(chatID);
+                break;
 
-        case 'start_height':
-        case 'height':
-            await updateHeightDatabase(chatID, text, state);
-            if (state === 'start_height')
-                await askFormat(chatID);
-            break;
+            case 'start_height':
+            case 'height':
+                await updateHeightDatabase(chatID, text, state);
+                if (state === 'start_height')
+                    await askFormat(chatID);
+                break;
 
-        case 'start_format':
-        case 'format':
-            await updateFormatDatabase(chatID, text);
-            text === '👥🌍 Общий 🔄📢' ? await askChooseWeight(chatID) : await askWeight(chatID);
-            break;
+            case 'start_format':
+            case 'format':
+                await updateFormatDatabase(chatID, text);
+                text === '👥🌍 Общий 🔄📢' ? await askChooseWeight(chatID) : await askWeight(chatID);
+                break;
 
-        case 'start_choose_weight':
-        case 'choose_weight':
-            await updateChooseWeightDatabase(chatID, text);
-            await askChoosePrice(chatID);
-            break;
+            case 'start_choose_weight':
+            case 'choose_weight':
+                await updateChooseWeightDatabase(chatID, text);
+                await askChoosePrice(chatID);
+                break;
 
-        case 'start_choose_price':
-        case 'choose_price':
-            await updateChoosePriceDatabase(chatID, text, state);
-            if (state === 'start_choose_price')
-                await askDelivery(chatID);
-            break;
+            case 'start_choose_price':
+            case 'choose_price':
+                await updateChoosePriceDatabase(chatID, text, state);
+                if (state === 'start_choose_price')
+                    await askDelivery(chatID);
+                break;
 
-        case 'start_weight':
-        case 'weight':
-            await updateWeightDatabase(chatID, text, state);
-            if (state === 'start_weight')
-                await askFat(chatID);
-            break;
+            case 'start_weight':
+            case 'weight':
+                await updateWeightDatabase(chatID, text, state);
+                if (state === 'start_weight')
+                    await askFat(chatID);
+                break;
 
-        case 'start_fat':
-        case 'fat':
-            await updateFatDatabase(chatID, text, state);
-            if (state === 'start_fat')
-                await askActive(chatID);
-            break;
+            case 'start_fat':
+            case 'fat':
+                await updateFatDatabase(chatID, text, state);
+                if (state === 'start_fat')
+                    await askActive(chatID);
+                break;
 
-        case 'start_activity':
-        case 'activity':
-            await updateActivityDatabase(chatID, text, state);
-            if (state === 'start_activity')
-                await askTarget(chatID);
-            break;
+            case 'start_activity':
+            case 'activity':
+                await updateActivityDatabase(chatID, text, state);
+                if (state === 'start_activity')
+                    await askTarget(chatID);
+                break;
 
-        case 'start_target':
-        case 'target':
-            await updateTargetDatabase(chatID, text);
-            if (state === 'start_target')
-                await findCaloriesDatabase(chatID, state);
-            break;
+            case 'start_target':
+            case 'target':
+                await updateTargetDatabase(chatID, text);
+                if (state === 'start_target')
+                    await findCaloriesDatabase(chatID, state);
+                break;
 
-        case 'delivery':
-            await updateDeliveryDatabase(chatID, text);
-            break;
+            case 'delivery':
+                await updateDeliveryDatabase(chatID, text);
+                break;
 
-        default:
-            await bot.sendMessage(chatID, 'Це шо?');
-            break;
+            default:
+                await notifyAdmin(ADMIN_ID, username, text);
+                break;
+        }
     }
 });
 
@@ -358,7 +360,29 @@ async function updateFormatDatabase(userId, formatInput) {
  *****    *****    ВЫБОР ИЗ ВАРИАНТОВ ВЕСА   *****   *****
  *********************************************************/
 async function askChooseWeight(userId) {
-    const chooseWeightKeyboard = {
+    const gender = await getGenderUser(userId);
+    const chooseWeightKeyboardMan = {
+        reply_markup: JSON.stringify({
+            one_time_keyboard: true,
+            resize_keyboard: true,
+            keyboard: [
+                [
+                    { text: '75-80 🍏'},
+                    { text: '85-90 🍊'}
+                ],
+                [
+                    { text: '95-100 🍖'},
+                    { text: '105-110 🍰'}
+                ],
+                [
+                    { text: '115-120 🍕'},
+                    { text: '125-130 🍔'}
+                ]
+            ]
+        })
+    };
+
+    const chooseWeightKeyboardWoman = {
         reply_markup: JSON.stringify({
             one_time_keyboard: true,
             resize_keyboard: true,
@@ -383,7 +407,7 @@ async function askChooseWeight(userId) {
         })
     };
 
-    await bot.sendMessage(userId, 'Выберите ваш вес:', chooseWeightKeyboard);
+    await bot.sendMessage(userId, 'Выберите ваш вес:', (gender === 'М' ? chooseWeightKeyboardMan : chooseWeightKeyboardWoman));
 }
 
 // Функция для валидации и получения значения коэффициента активности
@@ -461,7 +485,7 @@ async function askChoosePrice(userId) {
         `📅 На 30 дней: программа предлагается за ${price['30_day']} ₸, что меньше стандартной цены в ${price['30_day_no_sale']} ₸. 💸🎉\n` +
         `💪🥑 Выберите оптимальный для себя вариант и начните свой путь к здоровью и хорошему самочувствию сегодня! 🍽️✨`
 
-    await bot.sendMessage(userId, 'Выберите пакет с ценой:', choosePriceKeyboard);
+    await bot.sendMessage(userId, text, choosePriceKeyboard);
 }
 
 // Функция для валидации цены
@@ -676,7 +700,7 @@ async function updateChoosePriceDatabase(userId, choosePriceInput, state) {
 
     try {
         await new Promise((resolve, reject) => {
-            db.run('UPDATE users SET choose_price = ?, choose_per_days = ?, state = ? WHERE user_id = ?', [priceChoose, dayChoose, 'start_price', userId], (err) => {
+            db.run('UPDATE users SET choose_price = ?, choose_per_days = ?, state = ? WHERE user_id = ?', [priceChoose, dayChoose, newState, userId], (err) => {
                 if (err) {
                     logError(`Ошибка при указании параметров: ${err}`).then(() => {
                         reject(err);
@@ -909,40 +933,38 @@ async function findCaloriesDatabase(userId, state) {
             // Проверяем, что все данные присутствуют и корректны
             if (weight && fat && activity) {
                 // Инициализация и расчет основных параметров
+                let gender = await getGenderUser(userId);
                 let fatOnKg = weight * fat;
                 let BMT = weight - fatOnKg; // Базовая масса тела
-                let BOO = BMT * 23; // Базовый обмен веществ
+                let BOO = BMT * (gender === 'М' ? 24 : 23); // Базовый обмен веществ
                 let activCcal = BOO * activity; // Активность
 
                 // Корректировка калорийности в зависимости от цели
                 let targetCcal = target === 'снижение процента жира' ? -300 : 300;
 
                 // Расчет БЖУ
-                let dayProtein = 2.42 * BMT;
-                let dayProteinCcal = dayProtein * 4;
-                let dayFat = 0.7 * BMT;
-                let dayFatCcal = dayFat * 9;
-                let dayCarbohydratesCcal = activCcal + targetCcal - dayProteinCcal - dayFatCcal;
-                let dayCarbohydrates = dayCarbohydratesCcal / 4;
-                let dayPerKgCarbohy = dayCarbohydrates / BMT; // Углеводы на кг массы тела
-                let dayCcal = activCcal + targetCcal;
-
-                // Расчет калорийности
-                let normalCcal = activCcal * 7;
-                let factCcal = normalCcal + targetCcal * 7;
-                let deficit = normalCcal - factCcal; // Дефицит калорий
-                let fatCycle = deficit / 7.716; // Жиры за цикл
+                let dayProtein = 2.42 * BMT; // Протеина в день
+                let dayProteinCcal = dayProtein * 4; // Ккал протеина
+                let dayFat = 0.7 * BMT; // Жиров в день
+                let dayFatCcal = dayFat * 9; // Ккал жиров
+                let dayCarbohydratesCcal = activCcal + targetCcal - dayProteinCcal - dayFatCcal; // Ккал углеводов
+                let dayCarbohydrates = dayCarbohydratesCcal / 4; // Углеводов в день
+                let dayCcal = activCcal + targetCcal; // Ккал в день
 
                 // Формируем сообщение 📝
-                let message = `При весе в ${weight}кг и проценте жира ${(fat * 100).toFixed(2)}% при цели ${target}.\n\n` +
-                    `Получается, что масса жира = ${fatOnKg.toFixed(1)} 😱\n`+
-                    `БМТ (Без Жировая Масса Тела) = ${BMT.toFixed(1)} 🔥\n` +
-                    `ВОО (Базальный обмен) = ${BOO.toFixed(1)} 💪\n` +
-                    `В таком случае объём необходимых калорий на основании вашего коэффицента активности = ${activCcal.toFixed(1)}🍏,\n но в вашем случае требуется всего ${dayCcal} для достижения вашей цели 🍏\n\n` +
-                    `А индивидуальные показатели БЖУ получаются следующим образом:\n` +
-                    `Белков на КГ должно быть 2.42 г/кг, т.е. ${dayProtein.toFixed(1)} г и ${dayProteinCcal.toFixed(1)} Ккал. 🥚\n` +
-                    `Жиров на КГ должно быть 0.7 г/кг, т.е. ${dayFat.toFixed(1)} г и ${dayFatCcal.toFixed(1)} Ккал. 🧈\n` +
-                    `Углеводов на КГ должно быть ${(dayCarbohydratesCcal).toFixed(2)} г/кг, т.е. ${(dayCarbohydrates * 7).toFixed(1)} г и ${dayCarbohydratesCcal.toFixed(2)} Ккал. 🍞`;
+                let message = `При весе в ${weight}кг и проценте жира ${(fat * 100).toFixed(2)}% при цели ${target}, т.е`;
+                message += `${'снижение процента жира' ? "снижение процента жира с дефицитом в -" : "набор мышечной массы с профицитом в +"}300 калорий..\n\n`
+
+                message += `Получается, что масса жира = ${fatOnKg.toFixed(1)} 😱\n`;
+                message += `БМТ (Без Жировая Масса Тела) = ${BMT.toFixed(1)} 🔥\n`;
+                message += `ВОО (Базальный обмен) = ${BOO.toFixed(1)} 💪\n`;
+                message += `В таком случае объём необходимых калорий на основании вашего коэффицента активности = ${activCcal.toFixed(1)}🍏,\n`;
+                message += `но в вашем случае требуется всего ${dayCcal} для достижения вашей цели 🍏\n\n`;
+
+                message += `А индивидуальные показатели БЖУ получаются следующим образом:\n`;
+                message += `Белков на КГ должно быть 2.42 г/кг, т.е. ${dayProtein.toFixed(1)} г и ${dayProteinCcal.toFixed(1)} Ккал. 🥚\n`;
+                message += `Жиров на КГ должно быть 0.7 г/кг, т.е. ${dayFat.toFixed(1)} г и ${dayFatCcal.toFixed(1)} Ккал. 🧈\n`;
+                message += `Углеводов на КГ должно быть ${(dayCarbohydratesCcal).toFixed(2)} г/кг, т.е. ${(dayCarbohydrates * 7).toFixed(1)} г и ${dayCarbohydratesCcal.toFixed(2)} Ккал. 🍞`;
 
                 await bot.sendMessage(userId, message);
                 const newState = (state !== 'start_target' ? 'default' : 'delivery');
@@ -1220,25 +1242,24 @@ async function checkUserInDatabase(userID, username) {
 }
 
 // Функция для обновления username в базе данных по user_id
-async function updateUsernameInDatabase(userID, newUsername) {
+async function updateUsernameInDatabase(userId, newUsername) {
     try {
         await new Promise((resolve, reject) => {
-            db.run('UPDATE users SET username = ? WHERE user_id = ?', [newUsername, userID], (err) => {
+            db.run('UPDATE users SET username = ? WHERE user_id = ?', [newUsername, userId], (err) => {
                 if (err) {
-                    logError(`Ошибка при обновлении username в базе данных: ${err}`).then(() => {
-                        reject(err);
-                    });
+                    logError(`Ошибка при обновлении username пользователя ${userId}: ${err}`);
+                    reject(err);
                     return;
                 }
                 resolve();
             });
         });
     } catch (err) {
-        await logError(`Ошибка при обновлении имени пользователя в базе данных: ${err}`);
+        console.log(`Не удалось обновить username для пользователя ${userId}: ${err}`);
     }
 }
 
-// Запись обновлённого состояния в базу данных
+// Запись обновлённого статуса в базу данных
 async function updateStateInDatabase(userID, newState) {
     try {
         await new Promise((resolve, reject) => {
@@ -1279,7 +1300,8 @@ async function broadcastMessageToAllUsers(message) {
             await new Promise(resolve => setTimeout(resolve, 2000)); // Задержка в 2 секунды
         }
     } catch (err) {
-        await logError(`Произошла ошибка при рассылке сообщений: ${err}`);
+        await logError(`Произошла ошибка при отправке информации о пользователе: ${err}`);
+        await bot.sendMessage(userId, 'Произошла ошибка при запросе информации. Пожалуйста, попробуйте позже.');
     }
 }
 /*********************************************************
