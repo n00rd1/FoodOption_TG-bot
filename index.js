@@ -20,11 +20,12 @@ db.run(`CREATE TABLE IF NOT EXISTS users (
             weight                        REAL DEFAULT 0,
             fat                           REAL DEFAULT 0,
             activity                      REAL DEFAULT 1.2 CHECK(activity IN (1.2, 1.38, 1.46, 1.55, 1.64, 1.73, 1.9)),
-            target                        TEXT DEFAULT 'похудеть' CHECK(target IN ('похудеть', 'потолстеть')),
+            target                        TEXT DEFAULT 'снижение процента жира' CHECK(target IN ('снижение процента жира', 'набор веса')),
             state                         TEXT DEFAULT 'start_gender',
             calories                      REAL DEFAULT 0,
             delivery                      TEXT CHECK(delivery IN ('утро','вечер')),
-            registration_date             DATETIME DEFAULT CURRENT_TIMESTAMP
+            registration_date             DATETIME DEFAULT CURRENT_TIMESTAMP,
+            news_letter                   BOOLEAN DEFAULT TRUE                                
         );`);
 
 bot.on('contact', async (msg) => { // Реакция на отправку контакта
@@ -66,6 +67,10 @@ await console.log(msg);
         if (text === '/start') {        // Приветственное сообщение
             await sayHello(chatID);
             return ;
+        } else if (text === '/cancel') {
+             return;
+        } else if (text === '/send') {
+            return;
         } else if (text === '/command') {
             return;
         }
@@ -81,6 +86,20 @@ await console.log(msg);
             await updateGenderDatabase(chatID, text, state);
             if (state === 'start_gender')
                 await askMiddle(chatID);
+            break;
+
+        case 'start_middle':
+        case 'middle':
+            await updateMiddleDatabase(chatID, text, state);
+            if (state === 'start_middle')
+                await askHeight(chatID);
+            break;
+
+        case 'start_height':
+        case 'height':
+            await updateHeightDatabase(chatID, text, state);
+            if (state === 'start_height')
+                await askFormat(chatID);
             break;
 
         case 'start_format':
@@ -102,6 +121,20 @@ await console.log(msg);
                 await askDelivery(chatID);
             break;
 
+        case 'start_weight':
+        case 'weight':
+            await updateWeightDatabase(chatID, text, state);
+            if (state === 'start_weight')
+                await askFat(chatID);
+            break;
+
+        case 'start_fat':
+        case 'fat':
+            await updateFatDatabase(chatID, text, state);
+            if (state === 'start_fat')
+                await askActive(chatID);
+            break;
+
         case 'start_activity':
         case 'activity':
             await updateActivityDatabase(chatID, text, state);
@@ -114,6 +147,10 @@ await console.log(msg);
             await updateTargetDatabase(chatID, text);
             if (state === 'start_target')
                 await findCaloriesDatabase(chatID, state);
+            break;
+
+        case 'delivery':
+            await updateDeliveryDatabase(chatID, text);
             break;
 
         default:
@@ -704,11 +741,11 @@ async function updateWeightDatabase(userId, weightInput, state) {
  *****    *****             ЖИР              *****   *****
  *********************************************************/
 async function askFat(userId) {
-    await bot.sendMessage(userId, '💪 Введите процент вашего жира (например, 0,25) 📉:');
+    await bot.sendMessage(userId, '💪 Введите процент вашего жира (например, 0.25) 📉:');
 }
 
 // Валидация введённого процента пользователя
-function validateFat(fatInput) {
+async function validateFat(fatInput) {
     const normalizedInput = fatInput.replace(',', '.').replace(/[^0-9.]/g, '');
     const fatPercentage = parseFloat(normalizedInput);
 
@@ -720,7 +757,7 @@ function validateFat(fatInput) {
 
 // Функция для сохранения или обновления процента жира пользователя
 async function updateFatDatabase(userId, fatInput, state) {
-    const validatedFat = validateFat(fatInput);
+    const validatedFat = await validateFat(fatInput);
     let newState = (state !== 'start_fat' ? 'default' : 'start_activity');
 
     if (validatedFat === null) {
@@ -753,12 +790,12 @@ async function askActive(chatID) {
             one_time_keyboard: true,
             resize_keyboard: true,
             keyboard: [
-                { text: '👩‍💻 Бытовая деятельность (сидячая работа) 🏠' },
-                { text: '🏋️‍♂️ Фитнес тренировки 3 раза/неделю 💪' },
-                { text: '🏋️‍♂️ Интенсивные тренировки 4-5 раз/неделю 🔥' },
-                { text: '🏋️‍♀️ Фитнес тренировки 6 раз/неделю 💦' },
-                { text: '️‍♂️ Интенсивные тренировки 6 раз/неделю 💦' },
-                { text: '️🏋️‍♀️🌞 Интенсивные тренировки 6 раз/неделю (2 раза/день) 💦🌙' }
+                [{text: '👩‍💻 Бытовая деятельность (сидячая работа) 🏠'}],
+                [{text: '🏋️‍♂️ Фитнес тренировки 3 раза/неделю 💪'}],
+                [{text: '🏋️‍♂️ Интенсивные тренировки 4-5 раз/неделю 🔥'}],
+                [{text: '🏋️‍♀️ Фитнес тренировки 6 раз/неделю 💦'}],
+                [{text: '️‍♂️ Интенсивные тренировки 6 раз/неделю 💦'}],
+                [{text: '️🏋️‍♀️🌞 Интенсивные тренировки 6 раз/неделю (2 раза/день) 💦🌙'}]
             ]
         })
     };
@@ -818,8 +855,10 @@ async function askTarget(userId) {
             one_time_keyboard: true,
             resize_keyboard: true,
             keyboard: [
-                { text: '🏋️‍♀️🥗 Похудеть 🏃‍♀️️' },
-                { text: '🍔🛋️ Потолстеть 🍰' }
+                [
+                    { text: '🏋️‍♀️🥗 снижение процента жира 🏃‍♀️️' },
+                    { text: '🍔🛋️ набор веса 🍰' }
+                ]
             ]
         })
     };
@@ -828,11 +867,11 @@ async function askTarget(userId) {
 }
 
 // Функция для сохранения или обновления цели выбранной пользователем
-async function updateTargetDatabase(userId, targetInput) {
-    const target = ((targetInput === '🍔🛋️ Потолстеть 🍰') ? 'Потолстеть' : 'Похудеть');
+async function updateTargetDatabase(userId, targetInput, state) {
+    const target = ((targetInput === '🍔🛋️ набор веса 🍰') ? 'набор веса' : 'снижение процента жира');
     try {
         await new Promise((resolve, reject) => {
-            db.run('UPDATE users SET target = ?, state = ? WHERE user_id = ?', [target, 'calories', userId], (err) => {
+            db.run('UPDATE users SET target = ? WHERE user_id = ?', [target, userId], (err) => {
                 if (err) {
                     logError(`Ошибка при обновлении цели: ${err}`).then(() => {
                         reject(err);
@@ -842,6 +881,7 @@ async function updateTargetDatabase(userId, targetInput) {
                 resolve();
             });
         });
+        await findCaloriesDatabase(userId, state);
     } catch (err) {
         // Обработка ошибок, возникших при обновлении цели
         await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
@@ -853,7 +893,6 @@ async function updateTargetDatabase(userId, targetInput) {
 // Функция для просчёта, обновления и вывода
 async function findCaloriesDatabase(userId, state) {
     try {
-
         const row = await new Promise((resolve, reject) => {
             db.get('SELECT weight, fat, activity, target FROM users WHERE user_id = ?', [userId], (err, row) => {
                 if (err) {
@@ -876,7 +915,7 @@ async function findCaloriesDatabase(userId, state) {
                 let activCcal = BOO * activity; // Активность
 
                 // Корректировка калорийности в зависимости от цели
-                let targetCcal = target === 'Похудеть' ? -300 : 300;
+                let targetCcal = target === 'снижение процента жира' ? -300 : 300;
 
                 // Расчет БЖУ
                 let dayProtein = 2.42 * BMT;
@@ -886,6 +925,7 @@ async function findCaloriesDatabase(userId, state) {
                 let dayCarbohydratesCcal = activCcal + targetCcal - dayProteinCcal - dayFatCcal;
                 let dayCarbohydrates = dayCarbohydratesCcal / 4;
                 let dayPerKgCarbohy = dayCarbohydrates / BMT; // Углеводы на кг массы тела
+                let dayCcal = activCcal + targetCcal;
 
                 // Расчет калорийности
                 let normalCcal = activCcal * 7;
@@ -896,14 +936,13 @@ async function findCaloriesDatabase(userId, state) {
                 // Формируем сообщение 📝
                 let message = `При весе в ${weight}кг и проценте жира ${(fat * 100).toFixed(2)}% при цели ${target}.\n\n` +
                     `Получается, что масса жира = ${fatOnKg.toFixed(1)} 😱\n`+
-                    `БМТ (Базовый метаболический темп) = ${BMT.toFixed(1)} 🔥\n` +
-                    `ВОО (Величина Общего Обмена) = ${BOO.toFixed(1)} 💪\n` +
-                    `В таком случае стандартный объём калорий = ${activCcal.toFixed(1)} 🍏\n\n` +
+                    `БМТ (Без Жировая Масса Тела) = ${BMT.toFixed(1)} 🔥\n` +
+                    `ВОО (Базальный обмен) = ${BOO.toFixed(1)} 💪\n` +
+                    `В таком случае объём необходимых калорий на основании вашего коэффицента активности = ${activCcal.toFixed(1)}🍏,\n но в вашем случае требуется всего ${dayCcal} для достижения вашей цели 🍏\n\n` +
                     `А индивидуальные показатели БЖУ получаются следующим образом:\n` +
                     `Белков на КГ должно быть 2.42 г/кг, т.е. ${dayProtein.toFixed(1)} г и ${dayProteinCcal.toFixed(1)} Ккал. 🥚\n` +
                     `Жиров на КГ должно быть 0.7 г/кг, т.е. ${dayFat.toFixed(1)} г и ${dayFatCcal.toFixed(1)} Ккал. 🧈\n` +
-                    `Углеводов на КГ должно быть ${(dayCarbohydratesCcal).toFixed(2)} г/кг, т.е. ${(dayCarbohydrates * 7)} г и ${dayCarbohydratesCcal.toFixed(2)} Ккал. 🍞\n\n` +
-                    `Итого по калориям получается, что норма - ${normalCcal.toFixed(2)}, а фактически - ${factCcal.toFixed(2)}, т.е. ${targetCcal} составляет ${deficit.toFixed(2)}, а жир/кг (за цикл) = ${fatCycle.toFixed(2)} 🚴‍♂️`;
+                    `Углеводов на КГ должно быть ${(dayCarbohydratesCcal).toFixed(2)} г/кг, т.е. ${(dayCarbohydrates * 7).toFixed(1)} г и ${dayCarbohydratesCcal.toFixed(2)} Ккал. 🍞`;
 
                 await bot.sendMessage(userId, message);
                 const newState = (state !== 'start_target' ? 'default' : 'delivery');
@@ -1140,7 +1179,6 @@ async function setNextStates(userID) {
     }
 }
 
-
 // Функция для создания нового пользователя
 async function checkUserInDatabase(userID, username) {
     try {
@@ -1216,6 +1254,32 @@ async function updateStateInDatabase(userID, newState) {
         });
     } catch (err) {
         await logError(`Ошибка при обновлении состояния в базе данных: ${err}`);
+    }
+}
+
+// Массовая рассылка сообщений всем пользователям бота (из БД)
+async function broadcastMessageToAllUsers(message) {
+    try {
+        const users = await new Promise((resolve, reject) => {
+            db.all('SELECT user_id FROM users', [], (err, rows) => {
+                if (err) {
+                    logError(`Ошибка при получении списка пользователей: ${err}`).then(() => reject(err));
+                    return;
+                }
+                resolve(rows);
+            });
+        });
+
+        for (let user of users) {
+            await bot.sendMessage(user.user_id, message).catch(async err => {
+                await logError(`Ошибка при отправке сообщения пользователю ${user.user_id}: ${err}`);
+                // Здесь может быть логика для обработки ошибок отправки, например, удаление пользователя из базы
+            });
+            // Добавьте задержку между отправками сообщений, чтобы не прилетал блок
+            await new Promise(resolve => setTimeout(resolve, 2000)); // Задержка в 2 секунды
+        }
+    } catch (err) {
+        await logError(`Произошла ошибка при рассылке сообщений: ${err}`);
     }
 }
 /*********************************************************
