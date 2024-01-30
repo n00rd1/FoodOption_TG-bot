@@ -1187,8 +1187,6 @@ async function updateStateInDatabase(userID, newState) {
     }
 }
 
-// Массовая рассылка сообщений всем пользователям бота (из БД)
-async function broadcastMessageToAllUsers(message) {
 // Отписаться от рассылки
 async function unsubscribeFromNews(userId) {
     try {
