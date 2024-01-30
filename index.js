@@ -437,7 +437,7 @@ async function updateChooseWeightDatabase(userId, chooseWeightInput) {
 
     try {
         await new Promise((resolve, reject) => {
-            db.run('UPDATE users SET choose_weight = ?, state = ? WHERE user_id = ?', [validatedChooseWeight, 'start_price', userId], (err) => {
+            db.run('UPDATE users SET choose_weight = ?, state = ? WHERE user_id = ?', [validatedChooseWeight, 'start_choose_price', userId], (err) => {
                 if (err) {
                     logError(`Ошибка при обновлении веса: ${err}`).then(() => {
                         reject(err);
@@ -997,8 +997,10 @@ async function askDelivery(userId) {
             one_time_keyboard: true,
             resize_keyboard: true,
             keyboard: [
-                { text: '🌅☕ Утро (7-9) 🍳' },
-                { text: '🌆🍷 Вечер (21-23) 🌙' }
+                [
+                    { text: '🌅☕ Утро (7-9) 🍳' },
+                    { text: '🌆🍷 Вечер (21-23) 🌙' }
+                ]
             ]
         })
     };
@@ -1008,7 +1010,7 @@ async function askDelivery(userId) {
 
 // Функция для сохранения или обновления цели выбранной пользователем
 async function updateDeliveryDatabase(userId, deliveryInput) {
-    const validatedDelivery = (deliveryInput === '🌅☕ Утро (7-9) 🍳' ? 'Утро':'Вечер');
+    const validatedDelivery = (deliveryInput === '🌅☕ Утро (7-9) 🍳' ? 'утро':'вечер');
 
     if (validatedDelivery === null) {
         await bot.sendMessage(userId, 'Введены некорректные данные. Пожалуйста, выберите корректное время доставки.');
@@ -1029,7 +1031,9 @@ async function updateDeliveryDatabase(userId, deliveryInput) {
         });
     } catch (err) {
         await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+        return;
     }
+    await bot.sendMessage(userId, 'Спасибо за прохождение опроса, мы с вами свяжемся чуть позже.\n Пожалуйста, оставьте свой номер телефона следующим сообщением');
 }
 /*********************************************************
  *****    *****            ПРОЧЕЕ            *****   *****
@@ -1098,106 +1102,11 @@ async function getWeightUser(userID) {
         });
 
         // Возвращаем вес пользователя или null, если пользователь не найден
-        return row ? row.weight : null;
+        return row ? row.choose_weight : null;
     } catch (err) {
         // Обработка и логирование ошибок
         await logError(`Ошибка при получении веса пользователя для user_id ${userID}: ${err}`);
         throw err; // Перебрасываем ошибку дальше
-    }
-}
-
-// Получение текущего состояния
-function getStateOrder(currentState, currentFormat) {
-    // Список состояний в порядке их следования
-    const allStatesStart = [
-        'start_gender', 'start_middle', 'start_height', 'start_format',
-    ];
-
-    const allStatesDefaultStart = [
-        'start_choose_weight', 'start_price',
-    ];
-
-    const allStatesIndividualStart = [
-        'start_weight', 'start_fat', 'start_activity', 'start_target', 'start_calories',
-    ];
-
-    const allStatesDefault = [
-        'gender', 'middle', 'height', 'format', 'choose_weight', 'price', 'weight', 'fat', 'activity', 'target', 'delivery',
-    ];
-
-    // Определяем индекс текущего состояния
-    let newState = "", currentIndex = allStatesDefault.indexOf(currentState);
-
-    if (currentIndex !== -1 && currentIndex !== allStatesDefault.length - 1) {
-        newState = allStatesDefault[currentIndex + 1];
-    }
-    else {
-        if (currentIndex === allStatesDefault.length - 1) {
-            newState = 'default';
-        }
-        else {
-            currentIndex = allStatesStart.indexOf(currentState);
-            if (currentIndex !== -1 && currentIndex !== allStatesStart.length - 1) { // Если текущее состояние входит в начальное
-                newState = allStatesStart[currentIndex + 1];
-            } else if (currentIndex === allStatesStart.length - 1) { // Если текущее состояние входит в начальное и оно последнее
-                if (currentFormat === "общий") { // Если текущей формат - общий
-                    newState = allStatesDefaultStart[0];
-                } else if (currentFormat === "индив") { // Если текущей формат - индивидуальный
-                    newState = allStatesIndividualStart[0]
-                }
-            } else {
-                if (currentFormat === "общий") {
-                    currentIndex = allStatesDefaultStart.indexOf(currentState);
-                    if (currentIndex !== -1 && currentIndex !== allStatesDefaultStart.length - 1) { // Если текущее состояние входит в общее
-                        newState = allStatesDefaultStart[currentIndex + 1];
-                    } else {
-                        newState = allStatesDefault[allStatesDefault.length - 1];
-                    }
-                } else if (currentFormat === "индив") {
-                    currentIndex = allStatesIndividualStart.indexOf(currentState);
-                    if (currentIndex !== -1 && currentIndex !== allStatesIndividualStart.length - 1) { // Если текущее состояние входит в общее
-                        newState = allStatesIndividualStart[currentIndex + 1];
-                    } else {
-                        newState = allStatesDefault[allStatesDefault.length - 1];
-                    }
-                }
-            }
-        }
-    }
-    return newState;
-}
-
-// Функция для получения следующего статуса (возможна проблема в работе статусов)
-async function setNextStates(userID) {
-    try {
-        const row = await new Promise((resolve, reject) => {
-            db.get('SELECT state, format FROM users WHERE user_id = ?', [userID], (err, row) => {
-                if (err) {
-                    logError(`Ошибка при получении состояния и формата из базы данных: ${err}`).then(() => {
-                        reject(err);
-                    });
-                    return;
-                }
-                resolve(row);
-            });
-        });
-
-        if (!row) {
-            await logError('Пользователь не найден в базе данных');
-            return;
-        }
-
-        const { state: currentState, format: currentFormat } = row;
-        const newState = getNextState(currentState, currentFormat);
-
-        if (newState !== null) {
-            await updateStateInDatabase(userID, newState);
-        } else {
-            // Обработка ситуации, когда следующее состояние не может быть определено
-            await logError(`Невозможно определить следующее состояние для пользователя с ID ${userID}`);
-        }
-    } catch (err) {
-        await logError(`Ошибка при обновлении статуса в базе данных: ${err}`);
     }
 }
 
@@ -1280,24 +1189,151 @@ async function updateStateInDatabase(userID, newState) {
 
 // Массовая рассылка сообщений всем пользователям бота (из БД)
 async function broadcastMessageToAllUsers(message) {
+// Отписаться от рассылки
+async function unsubscribeFromNews(userId) {
     try {
-        const users = await new Promise((resolve, reject) => {
-            db.all('SELECT user_id FROM users', [], (err, rows) => {
+        await new Promise((resolve, reject) => {
+            db.run('UPDATE users SET news_letter = 0 WHERE user_id = ?', [userId], (err) => {
                 if (err) {
-                    logError(`Ошибка при получении списка пользователей: ${err}`).then(() => reject(err));
+                    logError(`Ошибка при отмене подписки на новости для пользователя ${userId}: ${err}`).then(() => reject(err));
                     return;
                 }
-                resolve(rows);
+                resolve();
+            });
+        });
+        await bot.sendMessage(userId, 'Вы успешно отписались от рассылки новостей.');
+    } catch (err) {
+        await logError(`Произошла ошибка при отмене подписки на новости: ${err}`);
+        await bot.sendMessage(userId, 'Произошла ошибка при попытке отписаться от рассылки новостей. Пожалуйста, попробуйте позже.');
+    }
+}
+
+// Получение списка подписанных на рассылку пользователей
+async function getUsersSubscribedToNewsletter() {
+    return new Promise((resolve, reject) => {
+        db.all('SELECT user_id FROM users WHERE news_letter = 1', [], (err, rows) => {
+            if (err) {
+                logError(`Ошибка при получении списка пользователей: ${err}`).then(() => reject(err));
+                return;
+            }
+            resolve(rows);
+        });
+    });
+}
+
+// извлечение пути для фото
+async function getLargestPhotoFileIdFromMessage(msg) {
+    if (!msg.photo || msg.photo.length === 0) {
+        return null; // В сообщении нет фото
+    }
+
+    // Сортируем массив фотографий по убыванию размера файла
+    const largestPhoto = msg.photo.sort((a, b) => b.file_size - a.file_size)[0];
+
+    return largestPhoto.file_id;
+}
+
+// Массовая рассылка ФОТО всем пользователям бота (из БД)
+async function broadcastPhotoToAllUsers(msg, adminId) {
+    let fileId = await getLargestPhotoFileIdFromMessage(msg);
+
+
+    if (adminId !== ADMIN_ID) {
+        console.log('Рассылка разрешена только администратору.');
+        return;
+    }
+
+    try {
+        const users = await getUsersSubscribedToNewsletter();
+
+        for (let user of users) {
+            await bot.sendPhoto(user.user_id, fileId).catch(err => logError(`Ошибка при отправке фото пользователю ${user.user_id}: ${err}`));
+            // Добавляем задержку между отправками, если необходимо
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+    } catch (err) {
+        logError(`Произошла ошибка при рассылке фотографий: ${err}`);
+    }
+}
+
+// Массовая рассылка сообщений все пользователям бота (из БД)
+async function broadcastTextMessageWithUnsubscribe(content, adminId) {
+    const unsubscribeText = "\nДля отписки от новостной рассылки нажмите сюда -> /cancel";
+    const maxMessageLength = 4096 - unsubscribeText.length; // Учитываем длину текста отписки
+
+    if (adminId !== ADMIN_ID) {
+        console.log('Рассылка разрешена только администратору.');
+        return;
+    }
+
+    try {
+        const users = await getUsersSubscribedToNewsletter();
+
+        for (let user of users) {
+            let messageContent = content.slice(0, maxMessageLength) + unsubscribeText;
+            let remainingContent = content.slice(maxMessageLength);
+
+            await bot.sendMessage(user.user_id, messageContent).catch(err => logError(`Ошибка при отправке сообщения пользователю ${user.user_id}: ${err}`));
+
+            while (remainingContent.length > 0) {
+                messageContent = remainingContent.slice(0, maxMessageLength);
+                remainingContent = remainingContent.slice(maxMessageLength);
+
+                if (remainingContent.length === 0) {
+                    messageContent += unsubscribeText;
+                }
+
+                await bot.sendMessage(user.user_id, messageContent).catch(err => logError(`Ошибка при отправке продолжения сообщения пользователю ${user.user_id}: ${err}`));
+                await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+        }
+    } catch (err) {
+        logError(`Произошла ошибка при рассылке текстовых сообщений: ${err}`);
+    }
+}
+
+// Вывод краткой сводки о пользователях + их username в ТГ
+
+
+// Вывод информации о пользователе
+async function sendUserInfo(userId) {
+    try {
+        const user = await new Promise((resolve, reject) => {
+            db.get('SELECT * FROM users WHERE user_id = ?', [userId], (err, row) => {
+                if (err) {
+                    logError(`Ошибка при получении информации о пользователе: ${err}`).then(() => reject(err));
+                    return;
+                }
+                resolve(row);
             });
         });
 
-        for (let user of users) {
-            await bot.sendMessage(user.user_id, message).catch(async err => {
-                await logError(`Ошибка при отправке сообщения пользователю ${user.user_id}: ${err}`);
-                // Здесь может быть логика для обработки ошибок отправки, например, удаление пользователя из базы
-            });
-            // Добавьте задержку между отправками сообщений, чтобы не прилетал блок
-            await new Promise(resolve => setTimeout(resolve, 2000)); // Задержка в 2 секунды
+        if (user) {
+            // Создание красиво оформленного сообщения с информацией о пользователе
+            let userInfo = `👤 Ваша информация:\n`;
+            userInfo += `Пол: ${user.gender === 'М' ? 'Мужской' : 'Женский'}\n`;
+            userInfo += `Рост: ${user.height} см\n`;
+            userInfo += `Обхват талии: ${user.middle} см\n`;
+            userInfo += `Тип питания: ${user.format}\n`;
+            if (user.format === 'общий') {
+                userInfo += `Выбранный вес: ${user.choose_weight}\n`;
+                userInfo += `Выбранная ценовая категория: ${user.choose_price}\n`;
+            } else {
+                userInfo += `Вес: ${user.weight} кг\n`;
+                userInfo += `Процент жира: ${user.fat}%\n`;
+                userInfo += `Уровень активности: ${user.activity}\n`;
+                userInfo += `Цель: ${user.target}\n`;
+                userInfo += `Текущее состояние: ${user.state}\n`;
+                userInfo += `Суточная норма калорий: ${user.calories} ккал\n`;
+            }
+            userInfo += `Время доставки: ${user.delivery}\n`;
+            userInfo += `Дата регистрации: ${user.registration_date}\n`;
+            userInfo += user.news_letter ? 'Подписка на рассылку: Да\n' : 'Подписка на рассылку: Нет\n';
+
+            // Отправка сообщения пользователю
+            await bot.sendMessage(userId, userInfo);
+        } else {
+            await bot.sendMessage(userId, 'Информация о пользователе не найдена.');
         }
     } catch (err) {
         await logError(`Произошла ошибка при отправке информации о пользователе: ${err}`);
