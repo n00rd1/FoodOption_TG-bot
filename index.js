@@ -70,88 +70,103 @@ await console.log(msg);
             await unsubscribeFromNews(chatID);
         } else if (text === '/info') {
             await sendUserInfo(chatID);
-        } else if (text === '/text') {
-            await broadcastTextMessageWithUnsubscribe(text, chatID);
-        } else if (text === '/photo') {
-            await broadcastPhotoToAllUsers(msg, chatID);
+        } else if (text === '/admin') {
+            await adminMenu(chatID);
         }
     } else {
         let state = await getUserState(chatID);
+        let result = false;
         switch (state) {
             case 'send_adm':
-                await broadcastContentToAllUsers(text, chatID)
+                result = await broadcastContentToAllUsers(text, chatID)
                 break;
 
             case 'start_gender':
             case 'gender':
-                await updateGenderDatabase(chatID, text, state);
-                if (state === 'start_gender')
+                result = await updateGenderDatabase(chatID, text, state);
+                if (result !== false && state === 'start_gender')
                     await askMiddle(chatID);
                 break;
 
             case 'start_middle':
             case 'middle':
-                await updateMiddleDatabase(chatID, text, state);
-                if (state === 'start_middle')
+                result = await updateMiddleDatabase(chatID, text, state);
+                if (result !== false && state === 'start_middle')
                     await askHeight(chatID);
                 break;
 
             case 'start_height':
             case 'height':
-                await updateHeightDatabase(chatID, text, state);
-                if (state === 'start_height')
+                result = await updateHeightDatabase(chatID, text, state);
+                if (result !== false && state === 'start_height')
                     await askFormat(chatID);
                 break;
 
             case 'start_format':
             case 'format':
-                await updateFormatDatabase(chatID, text);
-                text === '👥🌍 Общий 🔄📢' ? await askChooseWeight(chatID) : await askWeight(chatID);
+                result = await updateFormatDatabase(chatID, text);
+                if (result !== false)
+                    text === '👥🌍 Общий 🔄📢' ? await askChooseWeight(chatID) : await askWeight(chatID);
                 break;
 
             case 'start_choose_weight':
             case 'choose_weight':
-                await updateChooseWeightDatabase(chatID, text);
-                await askChoosePrice(chatID);
+                result = await updateChooseWeightDatabase(chatID, text);
+                if (result !== false)
+                    await askChoosePrice(chatID);
                 break;
 
             case 'start_choose_price':
             case 'choose_price':
-                await updateChoosePriceDatabase(chatID, text, state);
-                if (state === 'start_choose_price')
+                result = await updateChoosePriceDatabase(chatID, text, state);
+                if (result !== false && state === 'start_choose_price')
                     await askDelivery(chatID);
                 break;
 
             case 'start_weight':
             case 'weight':
-                await updateWeightDatabase(chatID, text, state);
-                if (state === 'start_weight')
+                result = await updateWeightDatabase(chatID, text, state);
+                if (result !== false && state === 'start_weight')
                     await askFat(chatID);
                 break;
 
             case 'start_fat':
             case 'fat':
-                await updateFatDatabase(chatID, text, state);
-                if (state === 'start_fat')
+                result = await updateFatDatabase(chatID, text, state);
+                if (result !== false && state === 'start_fat')
                     await askActive(chatID);
                 break;
 
             case 'start_activity':
             case 'activity':
-                await updateActivityDatabase(chatID, text, state);
-                if (state === 'start_activity')
+                result = await updateActivityDatabase(chatID, text, state);
+                if (result !== false && state === 'start_activity')
                     await askTarget(chatID);
                 break;
 
             case 'start_target':
             case 'target':
-                await updateTargetDatabase(chatID, text);
-                if (state === 'start_target')
-                    await findCaloriesDatabase(chatID, state);
+                result = await updateTargetDatabase(chatID, text);
                 break;
 
             case 'delivery':
                 await updateDeliveryDatabase(chatID, text);
+                break;
+
+            case 'admin':
+                if (text === '📧 Рассылка следующего сообщения ➡️') {
+                    await broadcastTextMessageWithUnsubscribe(text, chatID)
+                } else if (text === '📧 Рассылка следующего фото ➡️') {
+                    await broadcastPhotoToAllUsers(msg, chatID);
+                } else if (text === '📅 Список пользователей за сегодня ✅') {
+                    await userBotList(chatID, 1);
+                } else if (text === '📅 Список пользователей за 7 дней 🔄') {
+                    await userBotList(chatID, 7);
+                } else if (text === '📅 Список пользователей за 14 дней 📊') {
+                    await userBotList(chatID, 14);
+                } else if (text === '📅 Список пользователей за всё время 🌐') {
+                    await userBotList(chatID, 0);
+                }
                 break;
 
             default:
@@ -220,16 +235,16 @@ async function updateGenderDatabase(userId, genderInput, state) {
                     logError(`Ошибка при обновлении пола: ${err}`).then(() => {
                         reject(err);
                     });
-                    return;
+                    return false;
                 }
                 resolve();
             });
         });
     } catch (err) {
         await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+        return false;
     }
 }
-
 /*********************************************************
  *****    *****            ТАЛИЯ            *****   *****
  *********************************************************/
@@ -253,7 +268,7 @@ async function updateMiddleDatabase(userId, middleInput, state) {
 
     if (validatedMiddle === null) {
         await bot.sendMessage(userId, 'Введены некорректные данные.');
-        return;
+        return false;
     }
 
     try {
@@ -263,13 +278,14 @@ async function updateMiddleDatabase(userId, middleInput, state) {
                     logError(`Ошибка при обновлении обхвата талии: ${err}`).then(() => {
                         reject(err);
                     });
-                    return;
+                    return false;
                 }
                 resolve();
             });
         });
     } catch (err) {
         await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+        return false;
     }
 }
 /*********************************************************
@@ -296,7 +312,7 @@ async function updateHeightDatabase(userId, heightInput, state) {
 
     if (validatedHeight === null) {
         await bot.sendMessage(userId, 'Введены некорректные данные. Укажите ваш рост в диапазоне от 100 до 250 см.');
-        return;
+        return false;
     }
 
     try {
@@ -306,13 +322,14 @@ async function updateHeightDatabase(userId, heightInput, state) {
                     logError(`Ошибка при обновлении роста: ${err}`).then(() => {
                         reject(err);
                     });
-                    return;
+                    return false;
                 }
                 resolve();
             });
         });
     } catch (err) {
         await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+        return false;
     }
 }
 /*********************************************************
@@ -346,7 +363,7 @@ async function updateFormatDatabase(userId, formatInput) {
                     logError(`Ошибка при обновлении формата питания: ${err}`).then(() => {
                         reject(err);
                     });
-                    return;
+                    return false;
                 }
                 resolve();
             });
@@ -354,6 +371,7 @@ async function updateFormatDatabase(userId, formatInput) {
     } catch (err) {
         // Обработка ошибок, возникших при обновлении формата питания
         await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+        return false;
     }
 }
 /*********************************************************
@@ -432,7 +450,7 @@ async function updateChooseWeightDatabase(userId, chooseWeightInput) {
 
     if (!validatedChooseWeight) {
         await bot.sendMessage(userId, 'Некорректный выбор веса. Пожалуйста, попробуйте снова.');
-        return;
+        return false;
     }
 
     try {
@@ -442,7 +460,7 @@ async function updateChooseWeightDatabase(userId, chooseWeightInput) {
                     logError(`Ошибка при обновлении веса: ${err}`).then(() => {
                         reject(err);
                     });
-                    return;
+                    return false;
                 }
                 resolve();
             });
@@ -450,6 +468,7 @@ async function updateChooseWeightDatabase(userId, chooseWeightInput) {
     } catch (err) {
         // Обработка ошибок, возникших при обновлении веса
         await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+        return false;
     }
 }
 /*********************************************************
@@ -695,7 +714,7 @@ async function updateChoosePriceDatabase(userId, choosePriceInput, state) {
             break;
         default:
             await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
-            return;
+            return false;
     }
 
     try {
@@ -705,7 +724,7 @@ async function updateChoosePriceDatabase(userId, choosePriceInput, state) {
                     logError(`Ошибка при указании параметров: ${err}`).then(() => {
                         reject(err);
                     });
-                    return;
+                    return false;
                 }
                 resolve();
             });
@@ -713,6 +732,7 @@ async function updateChoosePriceDatabase(userId, choosePriceInput, state) {
     } catch (err) {
         // Обработка ошибок, возникших при обновлении веса
         await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+        return false;
     }
 }
 /*********************************************************
@@ -723,7 +743,7 @@ async function askWeight(userId) {
 }
 
 // Валидация введённого значения пользователем
-function validateWeight(weightInput) {
+async function validateWeight(weightInput) {
     // Преобразовываем ввод, заменяя запятые на точки и удаляя лишние символы
     const normalizedInput = weightInput.replace(',', '.').replace(/[^0-9.]/g, '');
     const weight = parseFloat(normalizedInput);
@@ -738,11 +758,11 @@ function validateWeight(weightInput) {
 // Функция для сохранения или обновления веса пользователя
 async function updateWeightDatabase(userId, weightInput, state) {
     let newState = (state !== 'start_weight' ? 'default' : 'start_fat');
-    const validatedWeight = validateWeight(weightInput);
+    const validatedWeight = await validateWeight(weightInput);
 
     if (validatedWeight === null) {
         await bot.sendMessage(userId, 'Введены некорректные данные. Укажите ваш вес в диапазоне от 30 до 200 кг.');
-        return;
+        return false;
     }
 
     try {
@@ -752,13 +772,14 @@ async function updateWeightDatabase(userId, weightInput, state) {
                     logError(`Ошибка при обновлении веса: ${err}`).then(() => {
                         reject(err);
                     });
-                    return;
+                    return false;
                 }
                 resolve();
             });
         });
     } catch (err) {
         await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+        return false;
     }
 }
 /*********************************************************
@@ -770,12 +791,25 @@ async function askFat(userId) {
 
 // Валидация введённого процента пользователя
 async function validateFat(fatInput) {
+    // Нормализация ввода: замена запятых на точки и удаление нечисловых символов
     const normalizedInput = fatInput.replace(',', '.').replace(/[^0-9.]/g, '');
-    const fatPercentage = parseFloat(normalizedInput);
 
-    if (isNaN(fatPercentage) || fatPercentage < 0 || fatPercentage > 1) {
+    // Преобразование в числовой формат и коррекция в случае необходимости
+    let fatPercentage = parseFloat(normalizedInput);
+
+    // Проверка на NaN и коррекция в случае, если значение задано в процентах
+    if (isNaN(fatPercentage) || fatPercentage <= 0) {
+        return null;
+    } else if (fatPercentage >= 1 && fatPercentage <= 100) {
+        // Если введено значение в процентах, преобразуем его в доли
+        fatPercentage = fatPercentage / 100;
+    }
+
+    // Проверка на соответствие ограничениям
+    if (fatPercentage <= 0.05 || fatPercentage >= 0.45) {
         return null;
     }
+
     return fatPercentage;
 }
 
@@ -786,7 +820,7 @@ async function updateFatDatabase(userId, fatInput, state) {
 
     if (validatedFat === null) {
         await bot.sendMessage(userId, 'Введены некорректные данные. Укажите процент жира в правильном формате (например, 0.25).');
-        return;
+        return false;
     }
 
     try {
@@ -796,13 +830,14 @@ async function updateFatDatabase(userId, fatInput, state) {
                     logError(`Ошибка при обновлении процента жира: ${err}`).then(() => {
                         reject(err);
                     });
-                    return;
+                    return false;
                 }
                 resolve();
             });
         });
     } catch (err) {
         await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+        return false;
     }
 }
 /*********************************************************
@@ -829,7 +864,12 @@ async function askActive(chatID) {
 }
 
 // Функция для валидации и получения значения коэффициента активности
-async function validateAndGetActivityCoefficient(activityDescription) {
+function validateAndGetActivityCoefficient(activityDescription) {
+    // Сначала очистим описание активности от лишних символов и эмодзи
+    const cleanedDescription = activityDescription
+        .replace(/[\u{1F600}-\u{1F64F}\u{2700}-\u{27BF}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}️‍♂️️🌞🌙💦💪🏠🏋️‍♀️🏋️‍♂️]/gu, '')
+        .trim();
+
     const activityCoefficients = {
         'Бытовая деятельность (сидячая работа)': 1.2,
         'Фитнес тренировки 3 раза/неделю': 1.38,
@@ -840,7 +880,8 @@ async function validateAndGetActivityCoefficient(activityDescription) {
         'Интенсивные тренировки 6 раз/неделю (2 раза/день)': 1.9
     };
 
-    return activityCoefficients[activityDescription] || null;
+    // Возвращаем коэффициент или null, если совпадений нет
+    return activityCoefficients[cleanedDescription] || null;
 }
 
 // Функция для сохранения или обновления параметров активности
@@ -851,6 +892,7 @@ async function updateActivityDatabase(userId, activityDescription, state) {
     if (newActivityCoefficient === null) {
         await logError(`Некорректное описание активности: ${activityDescription}`);
         await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, укажите корректные данные.');
+        return false;
     }
 
     try {
@@ -860,7 +902,7 @@ async function updateActivityDatabase(userId, activityDescription, state) {
                     logError(`Ошибка при обновлении параметров активности: ${err}`).then(() => {
                         reject(err);
                     });
-                    return;
+                    return false;
                 }
                 resolve();
             });
@@ -868,6 +910,7 @@ async function updateActivityDatabase(userId, activityDescription, state) {
     } catch (err) {
         // Обработка ошибок, возникших при обновлении активности
         await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+        return false;
     }
 }
 /*********************************************************
@@ -900,15 +943,16 @@ async function updateTargetDatabase(userId, targetInput, state) {
                     logError(`Ошибка при обновлении цели: ${err}`).then(() => {
                         reject(err);
                     });
-                    return;
+                    return false;
                 }
                 resolve();
             });
         });
-        await findCaloriesDatabase(userId, state);
+        return await findCaloriesDatabase(userId, state);
     } catch (err) {
         // Обработка ошибок, возникших при обновлении цели
         await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+        return false;
     }
 }
 /*********************************************************
@@ -921,7 +965,7 @@ async function findCaloriesDatabase(userId, state) {
             db.get('SELECT weight, fat, activity, target FROM users WHERE user_id = ?', [userId], (err, row) => {
                 if (err) {
                     logError(`Ошибка при получении данных пользователя: ${err}`).then(() => reject(err));
-                    return;
+                    return false;
                 }
                 resolve(row);
             });
@@ -971,10 +1015,10 @@ async function findCaloriesDatabase(userId, state) {
 
                 // Обновляем поле calories в базе данных
                 await new Promise((resolve, reject) => {
-                    db.run('UPDATE users SET calories = ?, state = ? WHERE user_id = ?', [calories, newState, userId], err => {
+                    db.run('UPDATE users SET calories = ?, state = ? WHERE user_id = ?', [activCcal, newState, userId], err => {
                         if (err) {
                             logError(`Ошибка при обновлении калорий в базе данных: ${err}`).then(() => reject(err));
-                            return;
+                            return false;
                         }
                         resolve();
                     });
@@ -982,10 +1026,13 @@ async function findCaloriesDatabase(userId, state) {
             } else {
                 await logError('Недостаточно данных для расчета калорий.');
                 await bot.sendMessage(userId, 'Недостаточно данных для расчёта калорий, пожалуйста, заполните все необходимые данные.');
+                return false;
             }
         }
     } catch (err) {
+        await logError(`Ошибка при подсчёте калорий. ${err}`);
         await bot.sendMessage(userId, 'Произошла ошибка при расчете калорий. Пожалуйста, попробуйте позже.');
+        return false;
     }
 }
 /*********************************************************
@@ -1014,7 +1061,7 @@ async function updateDeliveryDatabase(userId, deliveryInput) {
 
     if (validatedDelivery === null) {
         await bot.sendMessage(userId, 'Введены некорректные данные. Пожалуйста, выберите корректное время доставки.');
-        return;
+        return false;
     }
 
     try {
@@ -1024,14 +1071,14 @@ async function updateDeliveryDatabase(userId, deliveryInput) {
                     logError(`Ошибка при обновлении времени доставки: ${err}`).then(() => {
                         reject(err);
                     });
-                    return;
+                    return false;
                 }
                 resolve();
             });
         });
     } catch (err) {
         await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
-        return;
+        return false;
     }
     await bot.sendMessage(userId, 'Спасибо за прохождение опроса, мы с вами свяжемся чуть позже.\n Пожалуйста, оставьте свой номер телефона следующим сообщением');
 }
@@ -1219,7 +1266,7 @@ async function getUsersSubscribedToNewsletter() {
     });
 }
 
-// извлечение пути для фото
+// Извлечение пути для фото
 async function getLargestPhotoFileIdFromMessage(msg) {
     if (!msg.photo || msg.photo.length === 0) {
         return null; // В сообщении нет фото
@@ -1290,9 +1337,6 @@ async function broadcastTextMessageWithUnsubscribe(content, adminId) {
     }
 }
 
-// Вывод краткой сводки о пользователях + их username в ТГ
-
-
 // Вывод информации о пользователе
 async function sendUserInfo(userId) {
     try {
@@ -1341,18 +1385,6 @@ async function sendUserInfo(userId) {
 /*********************************************************
  ***    *****   ВАЖНЫЕ ЧАСТИ ДЛЯ РАБОТЫ       ****   *****
  *********************************************************/
-// Функция для отправки сообщений администратору
-async function notifyAdmin(userId, username, text = 'Без текста') {
-    if (ADMIN_ID !== userId) {
-        await bot.sendMessage(ADMIN_ID, `@${username || userId}: ${text}`);
-    }
-}
-
-// Функция для пересылки сообщений администратору
-async function forwardAdmin(msg) {
-    await bot.forwardMessage(ADMIN_ID, msg.chat.id, msg.message_id); // Пересылка самого документа
-}
-
 // Обработчик ошибок базы данных
 db.on('error', async err => {
     await notifyAdmin(ADMIN_ID, '', `База данных поела говна; ${err}`);
@@ -1368,6 +1400,94 @@ process.on('exit', async () => {
         }
     });
 });
+/*********************************************************
+ ***    *****        АДМИН ФУНКЦИИ            ****   *****
+ *********************************************************/
+// Функция для отправки сообщений администратору
+async function notifyAdmin(userId, username, text = 'Без текста') {
+    if (ADMIN_ID !== userId) {
+        await bot.sendMessage(ADMIN_ID, `@${username || userId}: ${text}`);
+    }
+}
+
+// Функция для пересылки сообщений администратору
+async function forwardAdmin(msg) {
+    await bot.forwardMessage(ADMIN_ID, msg.chat.id, msg.message_id); // Пересылка самого документа
+}
+
+// Вывод краткой сводки о пользователях + их username в ТГ
+async function userBotList(userID, days) {
+    if (userID !== ADMIN_ID)
+        return;
+
+    try {
+        return await new Promise((resolve, reject) => {
+            // Определяем условие выборки на основе заданного количества дней
+            let condition = days > 0 ? `AND registration_date >= datetime('now', '-${days} days')` : '';
+            let query = `SELECT * FROM users WHERE news_letter = 1 ${condition}`;
+
+            db.all(query, [], (err, rows) => {
+                if (err) {
+                    logError(`Ошибка при получении списка пользователей: ${err}`).then(() => reject(err));
+                    return;
+                }
+                resolve(rows);
+            });
+        });
+    } catch (err) {
+        await logError(`Произошла ошибка при получении списка пользователей: ${err}`);
+        // Возвращаем пустой массив в случае ошибки, чтобы обработка могла продолжаться
+        return [];
+    }
+}
+
+// Функция для вывода админ-панели админа
+async function adminMenu(userId) {
+    if (userId !== ADMIN_ID)
+        return;
+
+    try {
+        // Обновление статуса пользователя на 'admin'
+        await new Promise((resolve, reject) => {
+            db.run('UPDATE users SET state = ? WHERE user_id = ?', ['admin', userId], function(err) {
+                if (err) {
+                    logError(`Ошибка при обновлении статуса пользователя ${userId}: ${err}`).then(() => reject(err));
+                    return;
+                }
+                resolve();
+            });
+        });
+
+        // Клавиатура админ-панели
+        const adminKeyboard = {
+            reply_markup: JSON.stringify({
+                one_time_keyboard: true,
+                resize_keyboard: true,
+                keyboard: [
+                    [
+                        {text: '📅 Список пользователей за сегодня ✅'},
+                        {text: '📅 Список пользователей за 7 дней 🔄'},
+                    ],
+                    [
+                        {text: '📅 Список пользователей за 14 дней 📊'},
+                        {text: '📅 Список пользователей за всё время 🌐'}
+                    ],
+                    [
+                        {text: '📧 Рассылка следующего сообщения ➡️'},
+                        {text: '📧 Рассылка следующего фото ➡️'}
+                    ]
+                ]
+            })
+        };
+
+        // Отправка сообщения с клавиатурой
+        await bot.sendMessage(userId, 'Выберите функцию для админа', adminKeyboard);
+    } catch (err) {
+        await logError(`Произошла ошибка при выводе админ-панели: ${err}`);
+        // Отправляем сообщение об ошибке администратору
+        await bot.sendMessage(userId, 'Произошла ошибка при попытке отобразить админ-панель. Пожалуйста, попробуйте позже.');
+    }
+}
 
 /*********************************************************
  ***    *****           ТЕЛЕФОН               ****   *****
