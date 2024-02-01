@@ -297,7 +297,7 @@ async function askHeight(userId) {
 }
 
 // Валидация введённого роста пользователя
-function validateHeight(heightInput) {
+async function validateHeight(heightInput) {
     const height = parseInt(heightInput);
     if (isNaN(height) || height < 100 || height > 250) {
         return null; // Валидация не пройдена
@@ -308,7 +308,7 @@ function validateHeight(heightInput) {
 // Функция для валидации и обновления роста пользователя
 async function updateHeightDatabase(userId, heightInput, state) {
     let newState = (state !== 'start_height' ? 'default' : 'start_format');
-    const validatedHeight = validateHeight(heightInput);
+    const validatedHeight = await validateHeight(heightInput);
 
     if (validatedHeight === null) {
         await bot.sendMessage(userId, 'Введены некорректные данные. Укажите ваш рост в диапазоне от 100 до 250 см.');
