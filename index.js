@@ -5,27 +5,28 @@ require('dotenv').config();
 const {TELEGRAM_BOT_TOKEN, ADMIN_ID} = process.env, TelegramApi = require('node-telegram-bot-api'),
     bot = new TelegramApi(TELEGRAM_BOT_TOKEN, {polling: true});
 
-db.run(`CREATE TABLE IF NOT EXISTS users (
-            id                            INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id                       INTEGER UNIQUE,
-            username                      TEXT,
-            phone                         TEXT,
-            gender                        TEXT DEFAULT 'М' CHECK(gender IN ('М', 'Ж')),
-            height                        REAL DEFAULT 0,
-            middle                        REAL DEFAULT 0,
-            format                        TEXT DEFAULT 'общий' CHECK(format IN ('индив', 'общий')),
-            choose_weight                 TEXT,
-            choose_price                  TEXT,
-            choose_per_days               TEXT,
-            weight                        REAL DEFAULT 0,
-            fat                           REAL DEFAULT 0,
-            activity                      REAL DEFAULT 1.2 CHECK(activity IN (1.2, 1.38, 1.46, 1.55, 1.64, 1.73, 1.9)),
-            target                        TEXT DEFAULT 'снижение процента жира' CHECK(target IN ('снижение процента жира', 'набор веса')),
-            state                         TEXT DEFAULT 'start_gender',
-            calories                      REAL DEFAULT 0,
-            delivery                      TEXT CHECK(delivery IN ('утро','вечер')),
-            registration_date             DATETIME DEFAULT CURRENT_TIMESTAMP,
-            news_letter                   BOOLEAN DEFAULT TRUE                                
+db.run(`CREATE TABLE IF NOT EXISTS users
+        (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id           INTEGER UNIQUE,
+            username          TEXT,
+            phone             TEXT,
+            gender            TEXT     DEFAULT 'М' CHECK (gender IN ('М', 'Ж')),
+            height            REAL     DEFAULT 0,
+            middle            REAL     DEFAULT 0,
+            format            TEXT     DEFAULT 'общий' CHECK (format IN ('индив', 'общий')),
+            choose_weight     TEXT,
+            choose_price      TEXT,
+            choose_per_days   TEXT,
+            weight            REAL     DEFAULT 0,
+            fat               REAL     DEFAULT 0,
+            activity          REAL     DEFAULT 1.2 CHECK (activity IN (1.2, 1.38, 1.46, 1.55, 1.64, 1.73, 1.9)),
+            target            TEXT     DEFAULT 'снижение процента жира' CHECK (target IN ('снижение процента жира', 'набор веса')),
+            state             TEXT     DEFAULT 'start_gender',
+            calories          REAL     DEFAULT 0,
+            delivery          TEXT CHECK (delivery IN ('утро', 'вечер')),
+            registration_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+            news_letter       BOOLEAN  DEFAULT TRUE
         );`);
 
 bot.on('contact', async (msg) => { // Реакция на отправку контакта
@@ -49,38 +50,36 @@ bot.on('voice', async (msg) => { // Реакция на отправку гол�
 
 // На написание письма реакция
 bot.on('text', async msg => {
-await console.log(msg);
+    await console.log(msg);
     const username = msg.chat.username || 'unknown';
     const chatID = msg.chat.id;
 
     // Проверка на бота (отказываем в обслуживании)
-    if (msg.from.is_bot)
+    if (msg.from.is_bot) {
+        await logError(`Обнаружен бот: @${username}`);
         return await bot.sendMessage(ADMIN_ID, `@${username}: Обнаружен бот!!`);
+    }
 
     // Если не бот, то проверяю регистрацию
-    await checkUserInDatabase(chatID, username);
+    if (await checkUserInDatabase(chatID, username) === false) return;
 
     const text = msg.text || '';
     const msgType = msg.entities ? msg.entities[0].type : 'text';
 
     if (msgType === 'bot_command') {
-        if (text === '/start') {        // Приветственное сообщение
+        if (text === '/start') {            // Приветственное сообщение
             await sayHello(chatID);
-        } else if (text === '/cancel') {
+        } else if (text === '/cancel') {    // Отмена рассылки
             await unsubscribeFromNews(chatID);
-        } else if (text === '/info') {
+        } else if (text === '/info') {      // Информация о пользователе
             await sendUserInfo(chatID);
-        } else if (text === '/admin') {
+        } else if (text === '/admin') {     // Админ-функции (секретные)
             await adminMenu(chatID);
         }
     } else {
         let state = await getUserState(chatID);
         let result = false;
         switch (state) {
-            case 'send_adm':
-                result = await broadcastContentToAllUsers(text, chatID)
-                break;
-
             case 'start_gender':
             case 'gender':
                 result = await updateGenderDatabase(chatID, text, state);
@@ -146,7 +145,9 @@ await console.log(msg);
 
             case 'start_target':
             case 'target':
-                result = await updateTargetDatabase(chatID, text);
+                result = await updateTargetDatabase(chatID, text, state);
+                if (result !== false && state === 'start_target')
+                    await askDelivery(chatID);
                 break;
 
             case 'delivery':
@@ -169,6 +170,19 @@ await console.log(msg);
                 }
                 break;
 
+            case 'static':
+                if (text === '📬 Подписаться/отписаться на рассылку') {
+                    await unsubscribeFromNews(chatID);
+                } else if (text === 'ℹ️ Информация обо мне') {
+                    await sendUserInfo(chatID);
+                } else if (text === '🔁 Начать сначала') {
+                    await sayHello(chatID);
+                } else {
+                    await forwardAdmin(msg);
+                    await userMenu(chatID);
+                }
+                break;
+
             default:
                 await notifyAdmin(ADMIN_ID, username, text);
                 break;
@@ -177,7 +191,7 @@ await console.log(msg);
 });
 
 // Отправка приветственного сообщения проверка веса
-async function sayHello(userId) {
+async function sayHello(userID) {
     const helloMsg = 'Приветствуем вас в «Food Options»!\n\n' +
         'Я ваш персональный помощник в мире здорового и вкусного питания. Моя миссия - упростить ваш выбор и обеспечить вас сбалансированными и вкусными блюдами, учитывая ваш индивидуальный калораж и особенности здоровья.\n\n' +
         'Что мы можем для вас сделать\n' +
@@ -189,48 +203,48 @@ async function sayHello(userId) {
         'Следите за нашими обновлениями и специальными предложениями в Instagram: https://www.instagram.com/foodoptions.kz/\n\n' +
         'Если у вас возникнут вопросы или понадобится помощь, не стесняйтесь обращаться. Мы также доступны в WhatsApp: https://wa.me/77776886396\n\n' +
         'Приятного аппетита и заботы о своем здоровье! 🍽️🌿';
-/*
-    const startSettings = 'Для примерного просчёта уникальных параметров для вас необходимо заполнить простую анкету, для этого ответьте на вопросы ниже.\n\n' +
-        'Необходимо будет указать следующие параметры:' +
-        '    🤸⚖️ Общая масса тела / кг ⚖️\n' +
-        '    🤸‍♀️ % жира 🤸‍♀️\n' +
-        '    🍽️ Дефицит калорий 📉\n' +
-        '    🍔 Профицит калорий 📈';
-*/
+    /*
+        const startSettings = 'Для примерного просчёта уникальных параметров для вас необходимо заполнить простую анкету, для этого ответьте на вопросы ниже.\n\n' +
+            'Необходимо будет указать следующие параметры:' +
+            '    🤸⚖️ Общая масса тела / кг ⚖️\n' +
+            '    🤸‍♀️ % жира 🤸‍♀️\n' +
+            '    🍽️ Дефицит калорий 📉\n' +
+            '    🍔 Профицит калорий 📈';
+    */
 
-    await updateStateInDatabase(userId, 'start_gender');
-    await bot.sendMessage(userId, helloMsg);
-    await askMale(userId);
+    await updateStateInDatabase(userID, 'start_gender');
+    await bot.sendMessage(userID, helloMsg);
+    await askMale(userID);
 }
 
 /*********************************************************
  *****    *****            ПОЛ               *****   *****
  *********************************************************/
-async function askMale(userId) {
+async function askMale(userID) {
     const genderKeyboard = {
         reply_markup: JSON.stringify({
             one_time_keyboard: true,
             resize_keyboard: true,
             keyboard: [
                 [
-                    { text: '👔 Мужчина 👨' },
-                    { text: '👠 Женщина 👩' }
+                    {text: '👔 Мужчина 👨'},
+                    {text: '👠 Женщина 👩'}
                 ]
             ]
         })
     };
 
-    await bot.sendMessage(userId, 'Вы мужчина или женщина?', genderKeyboard);
+    await bot.sendMessage(userID, 'Вы мужчина или женщина?', genderKeyboard);
 }
 
 // Функция для сохранения или обновления пола пользователя
-async function updateGenderDatabase(userId, genderInput, state) {
-    let newState = (state !== 'start_gender' ? 'default' : 'start_middle');
+async function updateGenderDatabase(userID, genderInput, state) {
+    let newState = (state !== 'start_gender' ? 'static' : 'start_middle');
     const validatedGender = (genderInput === '👔 Мужчина 👨' ? 'М' : 'Ж');
 
     try {
         await new Promise((resolve, reject) => {
-            db.run('UPDATE users SET gender = ?, state = ? WHERE user_id = ?', [validatedGender, newState, userId], (err) => {
+            db.run('UPDATE users SET gender = ?, state = ? WHERE user_id = ?', [validatedGender, newState, userID], (err) => {
                 if (err) {
                     logError(`Ошибка при обновлении пола: ${err}`).then(() => {
                         reject(err);
@@ -241,15 +255,17 @@ async function updateGenderDatabase(userId, genderInput, state) {
             });
         });
     } catch (err) {
-        await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+        await logError(`Ошибка при записи пола пользователя [${userID}]: @${err}`);
+        await bot.sendMessage(userID, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
         return false;
     }
 }
+
 /*********************************************************
  *****    *****            ТАЛИЯ            *****   *****
  *********************************************************/
-async function askMiddle(userId) {
-    await bot.sendMessage(userId, '📏 Укажите размер вашей талии (например, 90) 👖');
+async function askMiddle(userID) {
+    await bot.sendMessage(userID, '📏 Укажите размер вашей талии (например, 90) 👖');
 }
 
 // Валидация введённых данных по замеру талии
@@ -262,18 +278,19 @@ async function validateMiddle(middleInput) {
 }
 
 // Функция для валидации и сохранения обхвата талии
-async function updateMiddleDatabase(userId, middleInput, state) {
-    let newState = (state !== 'start_middle' ? 'default' : 'start_height');
+async function updateMiddleDatabase(userID, middleInput, state) {
+    let newState = (state !== 'start_middle' ? 'static' : 'start_height');
     const validatedMiddle = await validateMiddle(middleInput);
 
     if (validatedMiddle === null) {
-        await bot.sendMessage(userId, 'Введены некорректные данные.');
+        await logError(`Пользователь [${userID}] ввёл неверные параметры своей талии`);
+        await bot.sendMessage(userID, 'Введены некорректные данные.');
         return false;
     }
 
     try {
         await new Promise((resolve, reject) => {
-            db.run('UPDATE users SET middle = ?, state = ? WHERE user_id = ?', [validatedMiddle, newState, userId], (err) => {
+            db.run('UPDATE users SET middle = ?, state = ? WHERE user_id = ?', [validatedMiddle, newState, userID], (err) => {
                 if (err) {
                     logError(`Ошибка при обновлении обхвата талии: ${err}`).then(() => {
                         reject(err);
@@ -284,16 +301,18 @@ async function updateMiddleDatabase(userId, middleInput, state) {
             });
         });
     } catch (err) {
-        await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+        await logError(`Ошибка при талии записи талии пользователя [${userID}]: @${err}`);
+        await bot.sendMessage(userID, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
         return false;
     }
 }
+
 /*********************************************************
  *****    *****            РОСТ              *****   *****
  *********************************************************/
 // Функция для запроса роста пользователя
-async function askHeight(userId) {
-    await bot.sendMessage(userId, '📏 Укажите ваш рост (например, 185) 👤');
+async function askHeight(userID) {
+    await bot.sendMessage(userID, '📏 Укажите ваш рост (например, 185) 👤');
 }
 
 // Валидация введённого роста пользователя
@@ -306,18 +325,19 @@ async function validateHeight(heightInput) {
 }
 
 // Функция для валидации и обновления роста пользователя
-async function updateHeightDatabase(userId, heightInput, state) {
-    let newState = (state !== 'start_height' ? 'default' : 'start_format');
+async function updateHeightDatabase(userID, heightInput, state) {
+    let newState = (state !== 'start_height' ? 'static' : 'start_format');
     const validatedHeight = await validateHeight(heightInput);
 
     if (validatedHeight === null) {
-        await bot.sendMessage(userId, 'Введены некорректные данные. Укажите ваш рост в диапазоне от 100 до 250 см.');
+        await logError(`Пользователь [${userID}] ввёл некорректные данные роста!`);
+        await bot.sendMessage(userID, 'Введены некорректные данные. Укажите ваш рост в диапазоне от 100 до 250 см.');
         return false;
     }
 
     try {
         await new Promise((resolve, reject) => {
-            db.run('UPDATE users SET height = ?, state = ? WHERE user_id = ?', [validatedHeight, newState, userId], (err) => {
+            db.run('UPDATE users SET height = ?, state = ? WHERE user_id = ?', [validatedHeight, newState, userID], (err) => {
                 if (err) {
                     logError(`Ошибка при обновлении роста: ${err}`).then(() => {
                         reject(err);
@@ -328,37 +348,39 @@ async function updateHeightDatabase(userId, heightInput, state) {
             });
         });
     } catch (err) {
-        await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+        await logError(`Ошибка при записи роста пользователя [${userID}]: @${err}`);
+        await bot.sendMessage(userID, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
         return false;
     }
 }
+
 /*********************************************************
  *****    *****  ВЫБОР ИЗ ВАРИАНТОВ ПИТАНИЯ  *****   *****
  *********************************************************/
-async function askFormat(userId) {
+async function askFormat(userID) {
     const genderKeyboard = {
         reply_markup: JSON.stringify({
             one_time_keyboard: true,
             resize_keyboard: true,
             keyboard: [
                 [
-                    { text: '👥🌍 Общий 🔄📢' },
-                    { text: '👤💡 Индивидуальный 🌟🔍' }
+                    {text: '👥🌍 Общий 🔄📢'},
+                    {text: '👤💡 Индивидуальный 🌟🔍'}
                 ]
             ]
         })
     };
-    await bot.sendMessage(userId, 'Выберите формат питания:', genderKeyboard);
+    await bot.sendMessage(userID, 'Выберите формат питания:', genderKeyboard);
 }
 
 // Функция для сохранения или обновления варианта питания пользователя
-async function updateFormatDatabase(userId, formatInput) {
+async function updateFormatDatabase(userID, formatInput) {
     const validatedFormat = (formatInput === '👥🌍 Общий 🔄📢' ? 'общий' : 'индив');
     let newState = (validatedFormat === 'индив' ? 'start_weight' : 'start_choose_weight');
 
     try {
         await new Promise((resolve, reject) => {
-            db.run('UPDATE users SET format = ?, state = ? WHERE user_id = ?', [validatedFormat, newState, userId], (err) => {
+            db.run('UPDATE users SET format = ?, state = ? WHERE user_id = ?', [validatedFormat, newState, userID], (err) => {
                 if (err) {
                     logError(`Ошибка при обновлении формата питания: ${err}`).then(() => {
                         reject(err);
@@ -369,32 +391,33 @@ async function updateFormatDatabase(userId, formatInput) {
             });
         });
     } catch (err) {
-        // Обработка ошибок, возникших при обновлении формата питания
-        await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+        await logError(`Ошибка при записи формата питания пользователя [${userID}]: @${err}`);
+        await bot.sendMessage(userID, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
         return false;
     }
 }
+
 /*********************************************************
  *****    *****    ВЫБОР ИЗ ВАРИАНТОВ ВЕСА   *****   *****
  *********************************************************/
-async function askChooseWeight(userId) {
-    const gender = await getGenderUser(userId);
+async function askChooseWeight(userID) {
+    const gender = await getGenderUser(userID);
     const chooseWeightKeyboardMan = {
         reply_markup: JSON.stringify({
             one_time_keyboard: true,
             resize_keyboard: true,
             keyboard: [
                 [
-                    { text: '75-80 🍏'},
-                    { text: '85-90 🍊'}
+                    {text: '75-80 🍏'},
+                    {text: '85-90 🍊'}
                 ],
                 [
-                    { text: '95-100 🍖'},
-                    { text: '105-110 🍰'}
+                    {text: '95-100 🍖'},
+                    {text: '105-110 🍰'}
                 ],
                 [
-                    { text: '115-120 🍕'},
-                    { text: '125-130 🍔'}
+                    {text: '115-120 🍕'},
+                    {text: '125-130 🍔'}
                 ]
             ]
         })
@@ -406,26 +429,26 @@ async function askChooseWeight(userId) {
             resize_keyboard: true,
             keyboard: [
                 [
-                    { text: '55-60 🥦'},
-                    { text: '65-70 🍇'}
+                    {text: '55-60 🥦'},
+                    {text: '65-70 🍇'}
                 ],
                 [
-                    { text: '75-80 🍏'},
-                    { text: '85-90 🍊'}
+                    {text: '75-80 🍏'},
+                    {text: '85-90 🍊'}
                 ],
                 [
-                    { text: '95-100 🍖'},
-                    { text: '105-110 🍰'}
+                    {text: '95-100 🍖'},
+                    {text: '105-110 🍰'}
                 ],
                 [
-                    { text: '115-120 🍕'},
-                    { text: '125-130 🍔'}
+                    {text: '115-120 🍕'},
+                    {text: '125-130 🍔'}
                 ]
             ]
         })
     };
 
-    await bot.sendMessage(userId, 'Выберите ваш вес:', (gender === 'М' ? chooseWeightKeyboardMan : chooseWeightKeyboardWoman));
+    await bot.sendMessage(userID, 'Выберите ваш вес:', (gender === 'М' ? chooseWeightKeyboardMan : chooseWeightKeyboardWoman));
 }
 
 // Функция для валидации и получения значения коэффициента активности
@@ -445,17 +468,18 @@ async function validateAndGetChooseWeight(chooseWeightInput) {
 }
 
 // Функция для сохранения или обновления пола пользователя
-async function updateChooseWeightDatabase(userId, chooseWeightInput) {
+async function updateChooseWeightDatabase(userID, chooseWeightInput) {
     const validatedChooseWeight = await validateAndGetChooseWeight(chooseWeightInput);
 
     if (!validatedChooseWeight) {
-        await bot.sendMessage(userId, 'Некорректный выбор веса. Пожалуйста, попробуйте снова.');
+        await bot.sendMessage(userID, 'Некорректный выбор веса. Пожалуйста, попробуйте снова.');
+        await logError(`Не верно введён вес пользователем [${userID}]`);
         return false;
     }
 
     try {
         await new Promise((resolve, reject) => {
-            db.run('UPDATE users SET choose_weight = ?, state = ? WHERE user_id = ?', [validatedChooseWeight, 'start_choose_price', userId], (err) => {
+            db.run('UPDATE users SET choose_weight = ?, state = ? WHERE user_id = ?', [validatedChooseWeight, 'start_choose_price', userID], (err) => {
                 if (err) {
                     logError(`Ошибка при обновлении веса: ${err}`).then(() => {
                         reject(err);
@@ -466,17 +490,18 @@ async function updateChooseWeightDatabase(userId, chooseWeightInput) {
             });
         });
     } catch (err) {
-        // Обработка ошибок, возникших при обновлении веса
-        await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+        await logError(`Ошибка при записи веса из вариантов для пользователя [${userID}]: @${err}`);
+        await bot.sendMessage(userID, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
         return false;
     }
 }
+
 /*********************************************************
  *****    *****    ВЫБОР ИЗ ВАРИАНТОВ ЦЕНЫ   *****   *****
  *********************************************************/
-async function askChoosePrice(userId) {
-    const gender = await getGenderUser(userId);
-    const choose_weight = await getWeightUser(userId);
+async function askChoosePrice(userID) {
+    const gender = await getGenderUser(userID);
+    const choose_weight = await getWeightUser(userID);
     const price = await findPrice(gender, choose_weight);
 
     const choosePriceKeyboard = {
@@ -485,12 +510,12 @@ async function askChoosePrice(userId) {
             resize_keyboard: true,
             keyboard: [
                 [
-                    { text: '🗓️ 6 дней ✨'},
-                    { text: '🗓️ 12 дней 🌟'}
+                    {text: '🗓️ 6 дней ✨'},
+                    {text: '🗓️ 12 дней 🌟'}
                 ],
                 [
-                    { text: '🗓️ 24 дней 💫'},
-                    { text: '🗓️ 30 дней 🔥'}
+                    {text: '🗓️ 24 дней 💫'},
+                    {text: '🗓️ 30 дней 🔥'}
                 ]
             ]
         })
@@ -504,7 +529,7 @@ async function askChoosePrice(userId) {
         `📅 На 30 дней: программа предлагается за ${price['30_day']} ₸, что меньше стандартной цены в ${price['30_day_no_sale']} ₸. 💸🎉\n` +
         `💪🥑 Выберите оптимальный для себя вариант и начните свой путь к здоровью и хорошему самочувствию сегодня! 🍽️✨`
 
-    await bot.sendMessage(userId, text, choosePriceKeyboard);
+    await bot.sendMessage(userID, text, choosePriceKeyboard);
 }
 
 // Функция для валидации цены
@@ -687,10 +712,10 @@ async function findPrice(gender, choose_weight) {
 }
 
 // Функция для сохранения или обновления цены выбранной пользователем
-async function updateChoosePriceDatabase(userId, choosePriceInput, state) {
-    const newState = (state !== 'start_choose_price' ? 'default' : 'delivery');
-    const gender = await getGenderUser(userId);
-    const choose_weight = await getWeightUser(userId);
+async function updateChoosePriceDatabase(userID, choosePriceInput, state) {
+    const newState = (state !== 'start_choose_price' ? 'static' : 'delivery');
+    const gender = await getGenderUser(userID);
+    const choose_weight = await getWeightUser(userID);
     const price = await findPrice(gender, choose_weight);
     let priceChoose = 0;
     let dayChoose = '';
@@ -713,13 +738,14 @@ async function updateChoosePriceDatabase(userId, choosePriceInput, state) {
             dayChoose = '30 дней';
             break;
         default:
-            await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+            await logError(`Ошибка при выборе дней у пользователя [${userID}]`);
+            await bot.sendMessage(userID, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
             return false;
     }
 
     try {
         await new Promise((resolve, reject) => {
-            db.run('UPDATE users SET choose_price = ?, choose_per_days = ?, state = ? WHERE user_id = ?', [priceChoose, dayChoose, newState, userId], (err) => {
+            db.run('UPDATE users SET choose_price = ?, choose_per_days = ?, state = ? WHERE user_id = ?', [priceChoose, dayChoose, newState, userID], (err) => {
                 if (err) {
                     logError(`Ошибка при указании параметров: ${err}`).then(() => {
                         reject(err);
@@ -730,16 +756,17 @@ async function updateChoosePriceDatabase(userId, choosePriceInput, state) {
             });
         });
     } catch (err) {
-        // Обработка ошибок, возникших при обновлении веса
-        await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+        await logError(`Ошибка при записи дней для пользователя [${userID}]: @${err}`);
+        await bot.sendMessage(userID, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
         return false;
     }
 }
+
 /*********************************************************
  *****    *****              ВЕС             *****   *****
  *********************************************************/
-async function askWeight(userId) {
-    await bot.sendMessage(userId, '📊 Введите ваш вес (например, 88,5) 🏋️‍♂️:');
+async function askWeight(userID) {
+    await bot.sendMessage(userID, '📊 Введите ваш вес (например, 88,5) 🏋️‍♂️:');
 }
 
 // Валидация введённого значения пользователем
@@ -756,18 +783,19 @@ async function validateWeight(weightInput) {
 }
 
 // Функция для сохранения или обновления веса пользователя
-async function updateWeightDatabase(userId, weightInput, state) {
-    let newState = (state !== 'start_weight' ? 'default' : 'start_fat');
+async function updateWeightDatabase(userID, weightInput, state) {
+    let newState = (state !== 'start_weight' ? 'static' : 'start_fat');
     const validatedWeight = await validateWeight(weightInput);
 
     if (validatedWeight === null) {
-        await bot.sendMessage(userId, 'Введены некорректные данные. Укажите ваш вес в диапазоне от 30 до 200 кг.');
+        await logError(`Пользователь [${userID}] ввёл некорректное значение своего веса`);
+        await bot.sendMessage(userID, 'Введены некорректные данные. Укажите ваш вес в диапазоне от 30 до 200 кг.');
         return false;
     }
 
     try {
         await new Promise((resolve, reject) => {
-            db.run('UPDATE users SET weight = ?, state = ? WHERE user_id = ?', [validatedWeight, newState, userId], (err) => {
+            db.run('UPDATE users SET weight = ?, state = ? WHERE user_id = ?', [validatedWeight, newState, userID], (err) => {
                 if (err) {
                     logError(`Ошибка при обновлении веса: ${err}`).then(() => {
                         reject(err);
@@ -778,15 +806,17 @@ async function updateWeightDatabase(userId, weightInput, state) {
             });
         });
     } catch (err) {
-        await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+        await logError(`Ошибка при записи веса пользователя [${userID}]: @${err}`);
+        await bot.sendMessage(userID, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
         return false;
     }
 }
+
 /*********************************************************
  *****    *****             ЖИР              *****   *****
  *********************************************************/
-async function askFat(userId) {
-    await bot.sendMessage(userId, '💪 Введите процент вашего жира (например, 0.25) 📉:');
+async function askFat(userID) {
+    await bot.sendMessage(userID, '💪 Введите процент вашего жира (например, 0.25) 📉:');
 }
 
 // Валидация введённого процента пользователя
@@ -814,18 +844,19 @@ async function validateFat(fatInput) {
 }
 
 // Функция для сохранения или обновления процента жира пользователя
-async function updateFatDatabase(userId, fatInput, state) {
+async function updateFatDatabase(userID, fatInput, state) {
     const validatedFat = await validateFat(fatInput);
-    let newState = (state !== 'start_fat' ? 'default' : 'start_activity');
+    let newState = (state !== 'start_fat' ? 'static' : 'start_activity');
 
     if (validatedFat === null) {
-        await bot.sendMessage(userId, 'Введены некорректные данные. Укажите процент жира в правильном формате (например, 0.25).');
+        await bot.sendMessage(userID, 'Введены некорректные данные. Укажите процент жира в правильном формате (например, 0.25).');
+        await logError(`Пользователь [${userID}] ввёл некорректное значение жира`);
         return false;
     }
 
     try {
         await new Promise((resolve, reject) => {
-            db.run('UPDATE users SET fat = ?, state = ? WHERE user_id = ?', [validatedFat, newState, userId], (err) => {
+            db.run('UPDATE users SET fat = ?, state = ? WHERE user_id = ?', [validatedFat, newState, userID], (err) => {
                 if (err) {
                     logError(`Ошибка при обновлении процента жира: ${err}`).then(() => {
                         reject(err);
@@ -836,10 +867,12 @@ async function updateFatDatabase(userId, fatInput, state) {
             });
         });
     } catch (err) {
-        await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+        await logError(`Ошибка при записи жира пользователя [${userID}]: @${err}`);
+        await bot.sendMessage(userID, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
         return false;
     }
 }
+
 /*********************************************************
  *****    *****          АКТИВНОСТЬ          *****   *****
  *********************************************************/
@@ -885,19 +918,19 @@ function validateAndGetActivityCoefficient(activityDescription) {
 }
 
 // Функция для сохранения или обновления параметров активности
-async function updateActivityDatabase(userId, activityDescription, state) {
+async function updateActivityDatabase(userID, activityDescription, state) {
     const newActivityCoefficient = validateAndGetActivityCoefficient(activityDescription);
-    let newState = (state === 'start_activity' ? 'start_target' : 'default');
+    let newState = (state === 'start_activity' ? 'start_target' : 'static');
 
     if (newActivityCoefficient === null) {
-        await logError(`Некорректное описание активности: ${activityDescription}`);
-        await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, укажите корректные данные.');
+        await bot.sendMessage(userID, 'Произошла ошибка при обновлении информации. Пожалуйста, укажите корректные данные.');
+        await logError(`Пользователь [${userID}] ввёл некорректное значение активности`);
         return false;
     }
 
     try {
         await new Promise((resolve, reject) => {
-            db.run('UPDATE users SET activity = ?, state = ? WHERE user_id = ?', [newActivityCoefficient, newState, userId], (err) => {
+            db.run('UPDATE users SET activity = ?, state = ? WHERE user_id = ?', [newActivityCoefficient, newState, userID], (err) => {
                 if (err) {
                     logError(`Ошибка при обновлении параметров активности: ${err}`).then(() => {
                         reject(err);
@@ -908,37 +941,38 @@ async function updateActivityDatabase(userId, activityDescription, state) {
             });
         });
     } catch (err) {
-        // Обработка ошибок, возникших при обновлении активности
-        await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+        await logError(`Ошибка при записи активности пользователя [${userID}]: @${err}`);
+        await bot.sendMessage(userID, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
         return false;
     }
 }
+
 /*********************************************************
  *****    *****             ЦЕЛЬ             *****   *****
  *********************************************************/
-async function askTarget(userId) {
+async function askTarget(userID) {
     const targerKeyboard = {
         reply_markup: JSON.stringify({
             one_time_keyboard: true,
             resize_keyboard: true,
             keyboard: [
                 [
-                    { text: '🏋️‍♀️🥗 снижение процента жира 🏃‍♀️️' },
-                    { text: '🍔🛋️ набор веса 🍰' }
+                    {text: '🏋️‍♀️🥗 снижение процента жира 🏃‍♀️️'},
+                    {text: '🍔🛋️ набор веса 🍰'}
                 ]
             ]
         })
     };
 
-    await bot.sendMessage(userId, 'Выберите цель питания:', targerKeyboard);
+    await bot.sendMessage(userID, 'Выберите цель питания:', targerKeyboard);
 }
 
 // Функция для сохранения или обновления цели выбранной пользователем
-async function updateTargetDatabase(userId, targetInput, state) {
+async function updateTargetDatabase(userID, targetInput, state) {
     const target = ((targetInput === '🍔🛋️ набор веса 🍰') ? 'набор веса' : 'снижение процента жира');
     try {
         await new Promise((resolve, reject) => {
-            db.run('UPDATE users SET target = ? WHERE user_id = ?', [target, userId], (err) => {
+            db.run('UPDATE users SET target = ? WHERE user_id = ?', [target, userID], (err) => {
                 if (err) {
                     logError(`Ошибка при обновлении цели: ${err}`).then(() => {
                         reject(err);
@@ -948,21 +982,22 @@ async function updateTargetDatabase(userId, targetInput, state) {
                 resolve();
             });
         });
-        return await findCaloriesDatabase(userId, state);
+        return await findCaloriesDatabase(userID, state);
     } catch (err) {
-        // Обработка ошибок, возникших при обновлении цели
-        await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+        await logError(`Ошибка при записи цели пользователя [${userID}]: @${err}`);
+        await bot.sendMessage(userID, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
         return false;
     }
 }
+
 /*********************************************************
  *****    *****           КАЛОРИИ            *****   *****
  *********************************************************/
 // Функция для просчёта, обновления и вывода
-async function findCaloriesDatabase(userId, state) {
+async function findCaloriesDatabase(userID, state) {
     try {
         const row = await new Promise((resolve, reject) => {
-            db.get('SELECT weight, fat, activity, target FROM users WHERE user_id = ?', [userId], (err, row) => {
+            db.get('SELECT weight, fat, activity, target FROM users WHERE user_id = ?', [userID], (err, row) => {
                 if (err) {
                     logError(`Ошибка при получении данных пользователя: ${err}`).then(() => reject(err));
                     return false;
@@ -972,12 +1007,12 @@ async function findCaloriesDatabase(userId, state) {
         });
 
         if (row) {
-            const { weight, fat, activity, target } = row;
+            const {weight, fat, activity, target} = row;
 
             // Проверяем, что все данные присутствуют и корректны
             if (weight && fat && activity) {
                 // Инициализация и расчет основных параметров
-                let gender = await getGenderUser(userId);
+                let gender = await getGenderUser(userID);
                 let fatOnKg = weight * fat;
                 let BMT = weight - fatOnKg; // Базовая масса тела
                 let BOO = BMT * (gender === 'М' ? 24 : 23); // Базовый обмен веществ
@@ -1010,12 +1045,12 @@ async function findCaloriesDatabase(userId, state) {
                 message += `Жиров на КГ должно быть 0.7 г/кг, т.е. ${dayFat.toFixed(1)} г и ${dayFatCcal.toFixed(1)} Ккал. 🧈\n`;
                 message += `Углеводов на КГ должно быть ${(dayCarbohydratesCcal).toFixed(2)} г/кг, т.е. ${(dayCarbohydrates * 7).toFixed(1)} г и ${dayCarbohydratesCcal.toFixed(2)} Ккал. 🍞`;
 
-                await bot.sendMessage(userId, message);
-                const newState = (state !== 'start_target' ? 'default' : 'delivery');
+                await bot.sendMessage(userID, message);
+                const newState = (state !== 'start_target' ? 'static' : 'delivery');
 
                 // Обновляем поле calories в базе данных
                 await new Promise((resolve, reject) => {
-                    db.run('UPDATE users SET calories = ?, state = ? WHERE user_id = ?', [activCcal, newState, userId], err => {
+                    db.run('UPDATE users SET calories = ?, state = ? WHERE user_id = ?', [activCcal, newState, userID], err => {
                         if (err) {
                             logError(`Ошибка при обновлении калорий в базе данных: ${err}`).then(() => reject(err));
                             return false;
@@ -1024,49 +1059,51 @@ async function findCaloriesDatabase(userId, state) {
                     });
                 });
             } else {
-                await logError('Недостаточно данных для расчета калорий.');
-                await bot.sendMessage(userId, 'Недостаточно данных для расчёта калорий, пожалуйста, заполните все необходимые данные.');
+                await logError(`Ошибка при записи калорий для пользователя [${userID}]: @${err}`);
+                await bot.sendMessage(userID, 'Недостаточно данных для расчёта калорий, пожалуйста, заполните все необходимые данные.');
                 return false;
             }
         }
     } catch (err) {
-        await logError(`Ошибка при подсчёте калорий. ${err}`);
-        await bot.sendMessage(userId, 'Произошла ошибка при расчете калорий. Пожалуйста, попробуйте позже.');
+        await logError(`Ошибка при подсчёте калорий у пользователя [${userID}]: @${err}`);
+        await bot.sendMessage(userID, 'Произошла ошибка при расчете калорий. Пожалуйста, попробуйте позже.');
         return false;
     }
 }
+
 /*********************************************************
  *****    *****           Доставка            *****   *****
  *********************************************************/
-async function askDelivery(userId) {
+async function askDelivery(userID) {
     const deliveryKeyboard = {
         reply_markup: JSON.stringify({
             one_time_keyboard: true,
             resize_keyboard: true,
             keyboard: [
                 [
-                    { text: '🌅☕ Утро (7-9) 🍳' },
-                    { text: '🌆🍷 Вечер (21-23) 🌙' }
+                    {text: '🌅☕ Утро (7-9) 🍳'},
+                    {text: '🌆🍷 Вечер (21-23) 🌙'}
                 ]
             ]
         })
     };
 
-    await bot.sendMessage(userId, 'Выберите время доставки:', deliveryKeyboard);
+    await bot.sendMessage(userID, 'Выберите время доставки:', deliveryKeyboard);
 }
 
 // Функция для сохранения или обновления цели выбранной пользователем
-async function updateDeliveryDatabase(userId, deliveryInput) {
-    const validatedDelivery = (deliveryInput === '🌅☕ Утро (7-9) 🍳' ? 'утро':'вечер');
+async function updateDeliveryDatabase(userID, deliveryInput) {
+    const validatedDelivery = (deliveryInput === '🌅☕ Утро (7-9) 🍳' ? 'утро' : 'вечер');
 
     if (validatedDelivery === null) {
-        await bot.sendMessage(userId, 'Введены некорректные данные. Пожалуйста, выберите корректное время доставки.');
+        await logError(`Пользователь [${userID}] ввёл некорректное значение доставки`);
+        await bot.sendMessage(userID, 'Введены некорректные данные. Пожалуйста, выберите корректное время доставки.');
         return false;
     }
 
     try {
         await new Promise((resolve, reject) => {
-            db.run('UPDATE users SET delivery = ?, state = ? WHERE user_id = ?', [validatedDelivery, 'default', userId], (err) => {
+            db.run('UPDATE users SET delivery = ?, state = ? WHERE user_id = ?', [validatedDelivery, 'static', userID], (err) => {
                 if (err) {
                     logError(`Ошибка при обновлении времени доставки: ${err}`).then(() => {
                         reject(err);
@@ -1077,11 +1114,13 @@ async function updateDeliveryDatabase(userId, deliveryInput) {
             });
         });
     } catch (err) {
-        await bot.sendMessage(userId, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
+        await logError(`Ошибка при записи доставки для пользователя [${userID}]: @${err}`);
+        await bot.sendMessage(userID, 'Произошла ошибка при обновлении информации. Пожалуйста, попробуйте снова позже.');
         return false;
     }
-    await bot.sendMessage(userId, 'Спасибо за прохождение опроса, мы с вами свяжемся чуть позже.\n Пожалуйста, оставьте свой номер телефона следующим сообщением');
+    await bot.sendMessage(userID, 'Спасибо за прохождение опроса, мы с вами свяжемся чуть позже.\n Пожалуйста, оставьте свой номер телефона следующим сообщением');
 }
+
 /*********************************************************
  *****    *****            ПРОЧЕЕ            *****   *****
  *********************************************************/
@@ -1096,7 +1135,7 @@ async function getUserState(userID) {
                     logError(`Ошибка при получении статуса пользователя: ${err}`).then(() => {
                         reject(err);
                     });
-                    return;
+                    return false;
                 }
                 resolve(row);
             });
@@ -1105,9 +1144,9 @@ async function getUserState(userID) {
         // Возвращаем статус пользователя или null, если пользователь не найден
         return row ? row.state : null;
     } catch (err) {
-        // Логирование ошибки и отправка уведомления пользователю (если это необходимо)
         await logError(`Ошибка при получении статуса пользователя: ${err}`);
-        throw err;
+        await bot.sendMessage(userID, 'Произошла ошибка при поиске информации о вашем статусе. Пожалуйста, попробуйте снова позже.');
+        return false;
     }
 }
 
@@ -1117,9 +1156,10 @@ async function getGenderUser(userID) {
         const row = await new Promise((resolve, reject) => {
             db.get('SELECT gender FROM users WHERE user_id = ?', [userID], (err, row) => {
                 if (err) {
-                    logError(`Ошибка при получении пола пользователя: ${err}`);
-                    reject(err);
-                    return;
+                    logError(`Ошибка при получении пола пользователя: ${err}`).then(() => {
+                        reject(err);
+                    });
+                    return false;
                 }
                 resolve(row);
             });
@@ -1128,9 +1168,8 @@ async function getGenderUser(userID) {
         // Возвращаем пол пользователя или null, если пользователь не найден
         return row ? row.gender : null;
     } catch (err) {
-        // Обработка и логирование ошибок
-        await logError(`Ошибка при получении пола пользователя для user_id ${userID}: ${err}`);
-        throw err; // Перебрасываем ошибку дальше
+        await logError(`Ошибка при получении пола пользователя для user_id [${userID}]: ${err}`);
+        return false;
     }
 }
 
@@ -1140,9 +1179,10 @@ async function getWeightUser(userID) {
         const row = await new Promise((resolve, reject) => {
             db.get('SELECT choose_weight FROM users WHERE user_id = ?', [userID], (err, row) => {
                 if (err) {
-                    logError(`Ошибка при получении веса пользователя: ${err}`);
-                    reject(err);
-                    return;
+                    logError(`Ошибка при получении веса пользователя: ${err}`).then(() => {
+                        reject(err);
+                    });
+                    return false;
                 }
                 resolve(row);
             });
@@ -1151,9 +1191,8 @@ async function getWeightUser(userID) {
         // Возвращаем вес пользователя или null, если пользователь не найден
         return row ? row.choose_weight : null;
     } catch (err) {
-        // Обработка и логирование ошибок
         await logError(`Ошибка при получении веса пользователя для user_id ${userID}: ${err}`);
-        throw err; // Перебрасываем ошибку дальше
+        return false;
     }
 }
 
@@ -1167,7 +1206,7 @@ async function checkUserInDatabase(userID, username) {
                     logError(`Ошибка при проверке существования пользователя: ${err}`).then(() => {
                         reject(err);
                     });
-                    return;
+                    return false;
                 }
                 resolve(row);
             });
@@ -1175,7 +1214,7 @@ async function checkUserInDatabase(userID, username) {
 
         // Если пользователь уже существует, просто возвращаем
         if (existingUser) {
-            return;
+            return true;
         }
 
         // Создаем нового пользователя, если он не найден
@@ -1186,7 +1225,7 @@ async function checkUserInDatabase(userID, username) {
                     logError(`Ошибка при создании пользователя: ${err}`).then(() => {
                         reject(err);
                     });
-                    return;
+                    return false;
                 }
                 resolve(); // Успешное выполнение
             });
@@ -1194,24 +1233,27 @@ async function checkUserInDatabase(userID, username) {
     } catch (err) { // Обработка возможных ошибок
         await logError(`Ошибка при создании или проверке пользователя: ${err}`);
         await bot.sendMessage(userID, 'Проблема в работе бота, попробуйте позже!');
+        return false;
     }
 }
 
 // Функция для обновления username в базе данных по user_id
-async function updateUsernameInDatabase(userId, newUsername) {
+async function updateUsernameInDatabase(userID, newUsername) {
     try {
         await new Promise((resolve, reject) => {
-            db.run('UPDATE users SET username = ? WHERE user_id = ?', [newUsername, userId], (err) => {
+            db.run('UPDATE users SET username = ? WHERE user_id = ?', [newUsername, userID], (err) => {
                 if (err) {
-                    logError(`Ошибка при обновлении username пользователя ${userId}: ${err}`);
-                    reject(err);
-                    return;
+                    logError(`Ошибка при обновлении username пользователя ${userID}: ${err}`).then(() => {
+                        reject(err);
+                    });
+                    return false;
                 }
                 resolve();
             });
         });
     } catch (err) {
-        console.log(`Не удалось обновить username для пользователя ${userId}: ${err}`);
+        await logError(`Ошибка при записи username пользователя [${userID}]: @${err}`);
+        return false;
     }
 }
 
@@ -1224,32 +1266,33 @@ async function updateStateInDatabase(userID, newState) {
                     logError(`Ошибка при обновлении состояния в базе данных для userID ${userID}: ${err}`).then(() => {
                         reject(err);
                     });
-                    return;
+                    return false;
                 }
                 resolve();
             });
         });
     } catch (err) {
-        await logError(`Ошибка при обновлении состояния в базе данных: ${err}`);
+        await logError(`Ошибка при обновлении состояния (статуса) пользователя [${userID}]: @${err}`);
+        return false;
     }
 }
 
 // Отписаться от рассылки
-async function unsubscribeFromNews(userId) {
+async function unsubscribeFromNews(userID) {
     try {
         await new Promise((resolve, reject) => {
-            db.run('UPDATE users SET news_letter = 0 WHERE user_id = ?', [userId], (err) => {
+            db.run('UPDATE users SET news_letter = 0 WHERE user_id = ?', [userID], (err) => {
                 if (err) {
-                    logError(`Ошибка при отмене подписки на новости для пользователя ${userId}: ${err}`).then(() => reject(err));
+                    logError(`Ошибка при отмене подписки на новости для пользователя ${userID}: ${err}`).then(() => reject(err));
                     return;
                 }
                 resolve();
             });
         });
-        await bot.sendMessage(userId, 'Вы успешно отписались от рассылки новостей.');
+        await bot.sendMessage(userID, 'Вы успешно отписались от рассылки новостей.');
     } catch (err) {
         await logError(`Произошла ошибка при отмене подписки на новости: ${err}`);
-        await bot.sendMessage(userId, 'Произошла ошибка при попытке отписаться от рассылки новостей. Пожалуйста, попробуйте позже.');
+        await bot.sendMessage(userID, 'Произошла ошибка при попытке отписаться от рассылки новостей. Пожалуйста, попробуйте позже.');
     }
 }
 
@@ -1282,9 +1325,8 @@ async function getLargestPhotoFileIdFromMessage(msg) {
 async function broadcastPhotoToAllUsers(msg, adminId) {
     let fileId = await getLargestPhotoFileIdFromMessage(msg);
 
-
     if (adminId !== ADMIN_ID) {
-        console.log('Рассылка разрешена только администратору.');
+        await logError(`Пользователь [${adminId}] пытается получить доступ к админ-панели.`);
         return;
     }
 
@@ -1293,11 +1335,11 @@ async function broadcastPhotoToAllUsers(msg, adminId) {
 
         for (let user of users) {
             await bot.sendPhoto(user.user_id, fileId).catch(err => logError(`Ошибка при отправке фото пользователю ${user.user_id}: ${err}`));
-            // Добавляем задержку между отправками, если необходимо
             await new Promise(resolve => setTimeout(resolve, 1000));
         }
     } catch (err) {
-        logError(`Произошла ошибка при рассылке фотографий: ${err}`);
+        await logError(`Произошла ошибка при рассылке фотографий: ${err}`);
+        await notifyAdmin(ADMIN_ID, '', 'Ошибка при рассылке фотографий');
     }
 }
 
@@ -1307,7 +1349,7 @@ async function broadcastTextMessageWithUnsubscribe(content, adminId) {
     const maxMessageLength = 4096 - unsubscribeText.length; // Учитываем длину текста отписки
 
     if (adminId !== ADMIN_ID) {
-        console.log('Рассылка разрешена только администратору.');
+        await logError(`Пользователь [${adminId}] пытается получить доступ к админ-панели.`);
         return;
     }
 
@@ -1333,18 +1375,20 @@ async function broadcastTextMessageWithUnsubscribe(content, adminId) {
             }
         }
     } catch (err) {
-        logError(`Произошла ошибка при рассылке текстовых сообщений: ${err}`);
+        await logError(`Произошла ошибка при рассылке текстовых сообщений: ${err}`);
+        await notifyAdmin(ADMIN_ID, '', 'Ошибка при рассылке сообщений');
     }
 }
 
 // Вывод информации о пользователе
-async function sendUserInfo(userId) {
+async function sendUserInfo(userID) {
     try {
         const user = await new Promise((resolve, reject) => {
-            db.get('SELECT * FROM users WHERE user_id = ?', [userId], (err, row) => {
+            db.get('SELECT * FROM users WHERE user_id = ?', [userID], async (err, row) => {
                 if (err) {
                     logError(`Ошибка при получении информации о пользователе: ${err}`).then(() => reject(err));
-                    return;
+                    await bot.sendMessage(userID, 'Произошла ошибка при запросе информации. Пожалуйста, попробуйте позже.');
+                    return false;
                 }
                 resolve(row);
             });
@@ -1373,15 +1417,17 @@ async function sendUserInfo(userId) {
             userInfo += user.news_letter ? 'Подписка на рассылку: Да\n' : 'Подписка на рассылку: Нет\n';
 
             // Отправка сообщения пользователю
-            await bot.sendMessage(userId, userInfo);
+            await bot.sendMessage(userID, userInfo);
         } else {
-            await bot.sendMessage(userId, 'Информация о пользователе не найдена.');
+            await logError(`Информация по пользователю [${userID}] не найдена`);
+            await bot.sendMessage(userID, 'Информация о пользователе не найдена.');
         }
     } catch (err) {
-        await logError(`Произошла ошибка при отправке информации о пользователе: ${err}`);
-        await bot.sendMessage(userId, 'Произошла ошибка при запросе информации. Пожалуйста, попробуйте позже.');
+        await logError(`Произошла ошибка при отправке информации о пользователе [${userID}]: ${err}`);
+        await bot.sendMessage(userID, 'Произошла ошибка при запросе информации. Пожалуйста, попробуйте позже.');
     }
 }
+
 /*********************************************************
  ***    *****   ВАЖНЫЕ ЧАСТИ ДЛЯ РАБОТЫ       ****   *****
  *********************************************************/
@@ -1400,13 +1446,38 @@ process.on('exit', async () => {
         }
     });
 });
+
+/*********************************************************
+ ***    *****        ПОЛЬЗОВАТЕЛЬ            ****   *****
+ *********************************************************/
+async function userMenu(chatID) {
+    const options = {
+        reply_markup: JSON.stringify({
+            one_time_keyboard: true,
+            resize_keyboard: true,
+            keyboard: [
+                [
+                    {text: '🔁 Начать сначала'},
+                ],
+                [
+                    {text: 'ℹ️ Информация обо мне'}
+                ],
+                [
+                    {text: '📬 Подписаться/отписаться на рассылку'}
+                ]
+            ]
+        })
+    };
+    await bot.sendMessage(chatID, 'Выберите параметр из списка:', options);
+}
+
 /*********************************************************
  ***    *****        АДМИН ФУНКЦИИ            ****   *****
  *********************************************************/
 // Функция для отправки сообщений администратору
-async function notifyAdmin(userId, username, text = 'Без текста') {
-    if (ADMIN_ID !== userId) {
-        await bot.sendMessage(ADMIN_ID, `@${username || userId}: ${text}`);
+async function notifyAdmin(userID, username, text = 'Без текста') {
+    if (ADMIN_ID !== userID) {
+        await bot.sendMessage(ADMIN_ID, `@${username || userID}: ${text}`);
     }
 }
 
@@ -1424,7 +1495,9 @@ async function userBotList(userID, days) {
         return await new Promise((resolve, reject) => {
             // Определяем условие выборки на основе заданного количества дней
             let condition = days > 0 ? `AND registration_date >= datetime('now', '-${days} days')` : '';
-            let query = `SELECT * FROM users WHERE news_letter = 1 ${condition}`;
+            let query = `SELECT *
+                         FROM users
+                         WHERE news_letter = 1 ${condition}`;
 
             db.all(query, [], (err, rows) => {
                 if (err) {
@@ -1436,23 +1509,23 @@ async function userBotList(userID, days) {
         });
     } catch (err) {
         await logError(`Произошла ошибка при получении списка пользователей: ${err}`);
-        // Возвращаем пустой массив в случае ошибки, чтобы обработка могла продолжаться
+        await bot.sendMessage(userID, 'Произошла ошибка при запросе информации. Пожалуйста, попробуйте позже.');
         return [];
     }
 }
 
 // Функция для вывода админ-панели админа
-async function adminMenu(userId) {
-    if (userId !== ADMIN_ID)
-        return;
+async function adminMenu(userID) {
+    if (userID !== ADMIN_ID)
+        return false;
 
     try {
         // Обновление статуса пользователя на 'admin'
         await new Promise((resolve, reject) => {
-            db.run('UPDATE users SET state = ? WHERE user_id = ?', ['admin', userId], function(err) {
+            db.run('UPDATE users SET state = ? WHERE user_id = ?', ['admin', userID], function (err) {
                 if (err) {
-                    logError(`Ошибка при обновлении статуса пользователя ${userId}: ${err}`).then(() => reject(err));
-                    return;
+                    logError(`Ошибка при обновлении статуса пользователя ${userID}: ${err}`).then(() => reject(err));
+                    return false;
                 }
                 resolve();
             });
@@ -1481,11 +1554,10 @@ async function adminMenu(userId) {
         };
 
         // Отправка сообщения с клавиатурой
-        await bot.sendMessage(userId, 'Выберите функцию для админа', adminKeyboard);
+        await bot.sendMessage(userID, 'Выберите функцию для админа', adminKeyboard);
     } catch (err) {
         await logError(`Произошла ошибка при выводе админ-панели: ${err}`);
-        // Отправляем сообщение об ошибке администратору
-        await bot.sendMessage(userId, 'Произошла ошибка при попытке отобразить админ-панель. Пожалуйста, попробуйте позже.');
+        await bot.sendMessage(userID, 'Произошла ошибка при попытке отобразить админ-панель. Пожалуйста, попробуйте позже.');
     }
 }
 
@@ -1498,13 +1570,12 @@ const updatePhoneNumber = async (userID, phoneNumber) => {
         await new Promise((resolve, reject) => {
             db.run('UPDATE users SET phone = ? WHERE user_id = ?', [phoneNumber, userID], (err) => {
                 if (err) {
-                    reject(err);
+                    logError(`Ошибка при обновлении мобильного телефона пользователя ${userID}: ${err}`).then(() => reject(err));
                     return;
                 }
                 resolve();
             });
         });
-        console.log(`Номер телефона обновлен для пользователя ${userID}`); // Используем console.log для успешных операций
     } catch (err) {
         await logError(`Ошибка при обновлении номера телефона в базе данных: ${err}`);
         await bot.sendMessage(userID, 'Произошла ошибка при обновлении вашего номера телефона. Пожалуйста, попробуйте снова.');
@@ -1518,6 +1589,5 @@ async function logError(err) {
         await fs.appendFile('error.log', errorMessage);
     } catch (fileErr) {
         await notifyAdmin(ADMIN_ID, '', 'Ошибка при записи в лог-файл');
-        console.error('Ошибка при записи в лог-файл', fileErr);
     }
 }
