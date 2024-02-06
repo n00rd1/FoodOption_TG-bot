@@ -50,7 +50,6 @@ bot.on('voice', async (msg) => { // Реакция на отправку гол�
 
 // На написание письма реакция
 bot.on('text', async msg => {
-    await console.log(msg);
     const username = msg.chat.username || 'unknown';
     const chatID = msg.chat.id;
 
