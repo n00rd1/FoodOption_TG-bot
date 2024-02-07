@@ -5,6 +5,13 @@ require('dotenv').config();
 const {TELEGRAM_BOT_TOKEN, ADMIN_ID} = process.env, TelegramApi = require('node-telegram-bot-api'),
     bot = new TelegramApi(TELEGRAM_BOT_TOKEN, {polling: true});
 
+// Объявление переменных окружения непосредственно в файле
+// const TELEGRAM_BOT_TOKEN = "";
+// const ADMIN_ID = INT_MAX;
+//
+// const TelegramApi = require('node-telegram-bot-api'),
+//     bot = new TelegramApi(TELEGRAM_BOT_TOKEN, {polling: true});
+
 db.run(`CREATE TABLE IF NOT EXISTS users
         (
             id                INTEGER PRIMARY KEY AUTOINCREMENT,
