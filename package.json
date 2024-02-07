@@ -1,7 +1,7 @@
 {
   "name": "tg_foodoption",
   "version": "1.0.0",
-  "description": "",
+  "description": "FoodOption_TG-bot — это инновационный Telegram-бот, созданный для предложения пользователю персонализированных вариантов питания. Бот использует базу данных SQLite для хранения информации о пользователях и их предпочтениях, что позволяет предоставлять актуальные и интересные предложения по мере использования.",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -10,8 +10,9 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "dotenv": "^16.3.1",
-    "node-telegram-bot-api": "^0.63.0",
-    "sqlite3": "^5.1.6"
-  }
+    "dotenv": "^16.4.1",
+    "node-telegram-bot-api": "^0.64.0",
+    "sqlite3": "^5.1.7"
+  },
+  "devDependencies": {}
 }
